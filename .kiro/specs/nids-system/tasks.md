@@ -1,9 +1,6 @@
 # 实施计划
 
-- [-] 1. 项目初始化与环境搭建
-
-
-
+- [x] 1. 项目初始化与环境搭建
   - 创建项目目录结构（backend/, frontend/, data/, models/）
   - 配置Python虚拟环境和依赖（requirements.txt）
   - 配置前端项目（Vue 3 + TypeScript + Vite）
@@ -12,6 +9,8 @@
   - _需求：20.1, 20.2_
 
 - [ ] 2. 数据库设计与初始化
+
+
   - 编写MySQL数据库初始化脚本（schema.sql）
   - 创建8张核心表（users, alerts, models, model_metrics, traffic_logs, datasets, system_logs, system_config）
   - 插入默认配置数据和管理员账户
