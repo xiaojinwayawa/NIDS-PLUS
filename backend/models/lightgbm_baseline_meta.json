@@ -1,0 +1,17 @@
+{
+    "name": "lightgbm_baseline",
+    "type": "lightgbm",
+    "params": {
+        "objective": "binary",
+        "verbosity": -1,
+        "seed": 42
+    },
+    "metrics": {
+        "accuracy": 0.979,
+        "precision": 0.9743589743589743,
+        "recall": 0.9589905362776026,
+        "f1": 0.9666136724960255,
+        "training_time": 0.25520873069763184
+    },
+    "timestamp": 1765775973.4144685
+}

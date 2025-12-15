@@ -54,7 +54,7 @@ const loadConfig = async () => {
 const saveConfig = async () => {
   saving.value = true
   try {
-    const res = await api.put('/system/config', config.value)
+    await api.put('/system/config', config.value)
     ElMessage.success('Configuration updated')
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || 'Failed to update config')
