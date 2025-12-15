@@ -122,8 +122,9 @@ CREATE TABLE IF NOT EXISTS system_config (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Insert default admin user (password: admin123)
+-- Updated hash to match bcrypt 3.2.2 format
 INSERT INTO users (username, password_hash, email, role) VALUES
-('admin', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYqVr/1jrPK', 'admin@nids.local', 'admin');
+('admin', '$2b$12$mUzDG9GwJXghc5RhwdiAnO9Gn2pGqHvf8pvhD58rMuV.rDx4GXA8W', 'admin@nids.local', 'admin');
 
 -- Insert default system configuration
 INSERT INTO system_config (config_key, config_value, value_type, description) VALUES

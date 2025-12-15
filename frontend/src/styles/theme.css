@@ -1,0 +1,10 @@
+:root {
+  /* Customize Element Plus to be square style */
+  --el-border-radius-base: 0px;
+  --el-border-radius-small: 0px;
+  --el-border-radius-round: 0px;
+  --el-border-radius-circle: 0px;
+  
+  /* Sci-fi Theme Colors (Optional enhancement) */
+  /* --el-color-primary: #00f2ff; */
+}
