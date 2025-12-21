@@ -52,6 +52,12 @@ async def startup_event():
     logger.info(f"API Prefix: {settings.API_V1_PREFIX}")
     logger.info(f"Log Level: {settings.LOG_LEVEL}")
     logger.info("=" * 60)
+    
+    # Set the event loop reference for the detection engine
+    import asyncio
+    loop = asyncio.get_event_loop()
+    if app.state.engine:
+        app.state.engine.set_event_loop(loop)
 
 
 @app.on_event("shutdown")

@@ -22,8 +22,14 @@ class InferenceEngine:
     Engine for running ML/DL model inference
     Supports single model and hybrid (ensemble) modes
     """
-    
-    def __init__(self, models_dir: str = "models"):
+
+    def __init__(self, models_dir: str = None):
+        # Default to project root models directory
+        if models_dir is None:
+            # Get the project root (parent of backend)
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            project_root = os.path.dirname(backend_dir)
+            models_dir = os.path.join(project_root, "models")
         self.models_dir = models_dir
         self.loaded_models: Dict[str, Any] = {}
         self.model_metadata: Dict[str, Dict] = {}
@@ -177,13 +183,31 @@ class InferenceEngine:
                     else:
                         probs = model.predict(features)
                 elif model_type == "xgboost":
-                    # XGBoost
+                    # XGBoost - handle both sklearn API and native Booster
                     if hasattr(model, "predict_proba"):
-                         probs = model.predict_proba(features)[:, 1]
+                        # sklearn XGBClassifier - need to handle feature names
+                        try:
+                            # Try direct prediction first
+                            probs = model.predict_proba(features)[:, 1]
+                        except Exception:
+                            # If feature name mismatch, try with feature validation disabled
+                            import pandas as pd
+                            if hasattr(model, 'feature_names_in_'):
+                                feature_names = model.feature_names_in_
+                                df = pd.DataFrame(features, columns=feature_names)
+                                probs = model.predict_proba(df)[:, 1]
+                            else:
+                                dtest = xgb.DMatrix(features)
+                                probs = model.predict(dtest)
                     else:
-                         # DMatrix needed for low-level booster
-                         dtest = xgb.DMatrix(features)
-                         probs = model.predict(dtest)
+                        # Native XGBoost Booster - must use DMatrix with feature names
+                        # Get feature names from the model if available
+                        feature_names = getattr(model, 'feature_names', None)
+                        if feature_names:
+                            dtest = xgb.DMatrix(features, feature_names=feature_names)
+                        else:
+                            dtest = xgb.DMatrix(features)
+                        probs = model.predict(dtest)
                 
                 if probs is not None:
                     results[model_key] = probs

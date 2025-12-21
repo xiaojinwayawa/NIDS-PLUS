@@ -80,42 +80,28 @@ async def get_traffic_stats(
     engine: DetectionEngine = Depends(get_engine)
 ):
     """
-    Get detailed traffic statistics (Mocked for prototype)
-    Real implementation would query a Time Series DB (InfluxDB/Prometheus) or aggregated SQL
+    Get detailed traffic statistics from real captured data
     """
-    import random
     from datetime import datetime, timedelta
     
-    now = datetime.now()
+    # Get real statistics from the detection engine
+    stats = engine.get_traffic_stats()
     
-    # 1. Protocol Distribution
-    protocols = [
-        {"name": "TCP", "value": random.randint(500, 1000)},
-        {"name": "UDP", "value": random.randint(200, 500)},
-        {"name": "ICMP", "value": random.randint(50, 200)},
-        {"name": "HTTP", "value": random.randint(300, 800)},
-        {"name": "DNS", "value": random.randint(100, 300)}
-    ]
+    # If no real data, return empty structure
+    if stats["total_packets"] == 0:
+        now = datetime.now()
+        return {
+            "protocols": [{"name": "No Data", "value": 0}],
+            "top_ips": [],
+            "heatmap": [],
+            "ports": ["80", "443", "22", "53", "8080"],
+            "time_slots": [(now - timedelta(minutes=i)).strftime("%H:%M") for i in range(10)][::-1],
+            "message": "No traffic data collected yet. Start the detection system to capture traffic."
+        }
     
-    # 2. Top IPs
-    top_ips = [
-        {"ip": f"192.168.1.{i}", "count": random.randint(100, 5000), "country": "Local"}
-        for i in range(1, 11)
-    ]
-    top_ips.sort(key=lambda x: x["count"], reverse=True)
+    # Fill in time slots if empty
+    if not stats["time_slots"]:
+        now = datetime.now()
+        stats["time_slots"] = [(now - timedelta(minutes=i)).strftime("%H:%M") for i in range(10)][::-1]
     
-    # 3. Port Activity (Heatmap mock)
-    # x: time (last 10 mins), y: common ports
-    ports = ["80", "443", "22", "53", "8080"]
-    heatmap_data = []
-    for i in range(10): # 10 time slots
-        for j, port in enumerate(ports):
-            heatmap_data.append([i, j, random.randint(0, 100)])
-            
-    return {
-        "protocols": protocols,
-        "top_ips": top_ips,
-        "heatmap": heatmap_data,
-        "ports": ports,
-        "time_slots": [(now - timedelta(minutes=i)).strftime("%H:%M") for i in range(10)][::-1]
-    }
+    return stats

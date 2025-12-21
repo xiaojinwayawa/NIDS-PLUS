@@ -85,15 +85,17 @@ CREATE TABLE IF NOT EXISTS traffic_logs (
 -- Datasets table
 CREATE TABLE IF NOT EXISTS datasets (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL,
+    name VARCHAR(100) NOT NULL UNIQUE,
     type VARCHAR(50) NOT NULL COMMENT 'nsl-kdd, cic-ids2017, custom',
     file_path VARCHAR(255) NOT NULL,
     file_size_mb FLOAT,
-    sample_count INT,
-    feature_count INT,
+    sample_count INT DEFAULT 0,
+    feature_count INT DEFAULT 0,
     class_distribution JSON,
-    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     uploaded_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    description VARCHAR(255),
+    INDEX idx_name (name),
     FOREIGN KEY (uploaded_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -9,27 +9,39 @@
           <el-option label="Medium" value="medium" />
           <el-option label="Low" value="low" />
         </el-select>
+        <el-button type="primary" @click="loadAlerts">Refresh</el-button>
+        <el-dropdown @command="handleTestCommand">
+          <el-button type="warning">
+            Test <el-icon class="el-icon--right"><arrow-down /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="generate">Generate 10 Test Alerts</el-dropdown-item>
+              <el-dropdown-item command="clear" divided>Clear All Alerts</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
     <el-card shadow="hover">
       <el-table :data="pagedAlerts" style="width: 100%" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="timestamp" label="Time" width="180">
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="timestamp" label="Time" min-width="170">
           <template #default="scope">
             {{ formatTime(scope.row.timestamp) }}
           </template>
         </el-table-column>
-        <el-table-column prop="src_ip" label="Source IP" width="160" />
-        <el-table-column prop="dst_ip" label="Destination IP" width="160" />
-        <el-table-column prop="protocol" label="Proto" width="100" />
-        <el-table-column prop="attack_type" label="Attack" min-width="160" />
-        <el-table-column prop="confidence" label="Conf." width="100">
+        <el-table-column prop="src_ip" label="Source IP" min-width="140" />
+        <el-table-column prop="dst_ip" label="Destination IP" min-width="150" />
+        <el-table-column prop="protocol" label="Protocol" min-width="90" />
+        <el-table-column prop="attack_type" label="Attack Type" min-width="140" />
+        <el-table-column prop="confidence" label="Confidence" min-width="110">
           <template #default="scope">
             <el-tag :type="confidenceType(scope.row.confidence)">{{ scope.row.confidence.toFixed(2) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="220" fixed="right">
+        <el-table-column label="Actions" width="200" fixed="right">
           <template #default="scope">
             <el-button size="small" type="primary" @click="openDetail(scope.row.id)">Details</el-button>
             <el-button size="small" type="warning" :disabled="scope.row.is_false_positive" @click="markFalsePositive(scope.row.id)">
@@ -92,7 +104,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import api from '@/api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -228,6 +241,42 @@ const shapBarOption = computed(() => {
     series: [{ name: 'SHAP', type: 'bar', data: values }]
   }
 })
+
+// Test functions
+const handleTestCommand = async (command: string) => {
+  if (command === 'generate') {
+    await generateTestAlerts()
+  } else if (command === 'clear') {
+    await clearAllAlerts()
+  }
+}
+
+const generateTestAlerts = async () => {
+  try {
+    const res = await api.post('/alerts/test/generate?count=10')
+    ElMessage.success(res.data.message)
+    await loadAlerts()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || 'Failed to generate test alerts')
+  }
+}
+
+const clearAllAlerts = async () => {
+  try {
+    await ElMessageBox.confirm('Are you sure you want to delete all alerts?', 'Warning', {
+      confirmButtonText: 'Yes',
+      cancelButtonText: 'Cancel',
+      type: 'warning'
+    })
+    const res = await api.delete('/alerts/test/clear')
+    ElMessage.success(res.data.message)
+    await loadAlerts()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.detail || 'Failed to clear alerts')
+    }
+  }
+}
 
 onMounted(() => {
   loadAlerts()

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from auth import get_current_user, TokenData
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from ml.detection_engine import DetectionEngine, SystemState
+from capture.traffic_capture import get_network_interfaces, get_default_interface
 
 from config import settings
 
@@ -66,7 +67,23 @@ async def get_system_status(
     engine: DetectionEngine = Depends(get_engine)
 ):
     """Get system status"""
-    return engine.get_status()
+    status = engine.get_status()
+    
+    # Add capture status
+    if engine.capture:
+        status["capture_running"] = engine.capture.is_running
+    else:
+        status["capture_running"] = False
+    
+    # Add Redis queue length
+    if engine.redis_client:
+        try:
+            queue_len = engine.redis_client.llen("traffic_queue")
+            status["queue_length"] = queue_len
+        except:
+            status["queue_length"] = -1
+    
+    return status
 
 @router.post("/start")
 async def start_system(
@@ -78,8 +95,12 @@ async def start_system(
     if engine.state == SystemState.RUNNING:
         raise HTTPException(status_code=400, detail="System already running")
     
+    # Reset state if in ERROR or STOPPED
+    if engine.state in [SystemState.ERROR, SystemState.STOPPED]:
+        engine.state = SystemState.IDLE
+    
     engine.start(mode=request.mode, source=request.source)
-    return {"message": "System started", "mode": request.mode}
+    return {"message": "System started", "mode": request.mode, "state": engine.state.value}
 
 @router.post("/stop")
 async def stop_system(
@@ -105,3 +126,16 @@ async def configure_system(
         
     engine.configure(config.model_dump(exclude_unset=True))
     return {"message": "System configured", "config": config.model_dump(exclude_unset=True)}
+
+@router.get("/interfaces")
+async def get_interfaces(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get available network interfaces for live capture"""
+    interfaces = get_network_interfaces()
+    default_iface = get_default_interface()
+    
+    return {
+        "interfaces": interfaces,
+        "default": default_iface
+    }

@@ -111,25 +111,67 @@
     </el-row>
 
     <!-- Start Dialog -->
-    <el-dialog v-model="startDialogVisible" title="Start Detection System" width="30%">
+    <el-dialog v-model="startDialogVisible" title="Start Detection System" width="500px">
       <el-form :model="startForm" label-width="100px">
+        <el-form-item label="Model">
+          <el-select 
+            v-model="startForm.model" 
+            placeholder="Select Detection Model"
+            :loading="loadingModels"
+            style="width: 100%"
+          >
+            <el-option 
+              v-for="model in availableModels" 
+              :key="model.name" 
+              :label="`${model.name} (${model.type})`"
+              :value="model.name"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="Mode">
-          <el-select v-model="startForm.mode">
+          <el-select v-model="startForm.mode" @change="onModeChange">
             <el-option label="PCAP Replay" value="pcap" />
             <el-option label="Live Capture" value="live" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Source" v-if="startForm.mode === 'pcap'">
-           <el-input v-model="startForm.source" placeholder="Path to PCAP file (optional)" />
+        <el-form-item label="PCAP File" v-if="startForm.mode === 'pcap'">
+          <el-select 
+            v-model="startForm.source" 
+            placeholder="Select a PCAP file"
+            :loading="loadingPcaps"
+            style="width: 100%"
+          >
+            <el-option 
+              v-for="file in pcapFiles" 
+              :key="file.path" 
+              :label="`${file.name} (${file.size_mb} MB)`"
+              :value="file.path"
+            />
+          </el-select>
+          <div class="pcap-hint" v-if="pcapDirectory">
+            Directory: {{ pcapDirectory }}
+          </div>
         </el-form-item>
         <el-form-item label="Interface" v-if="startForm.mode === 'live'">
-           <el-input v-model="startForm.source" placeholder="Network Interface (e.g., eth0)" />
+          <el-select 
+            v-model="startForm.source" 
+            placeholder="Select Network Interface"
+            :loading="loadingInterfaces"
+            style="width: 100%"
+          >
+            <el-option 
+              v-for="iface in networkInterfaces" 
+              :key="iface" 
+              :label="iface === defaultInterface ? `${iface} (default)` : iface"
+              :value="iface"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="startDialogVisible = false">Cancel</el-button>
-          <el-button type="primary" @click="confirmStart">Start</el-button>
+          <el-button type="primary" @click="confirmStart" :disabled="!canStart">Start</el-button>
         </span>
       </template>
     </el-dialog>
@@ -151,6 +193,7 @@ import {
   GridComponent,
   LegendComponent
 } from 'echarts/components'
+import api from '@/api'
 
 use([
   CanvasRenderer,
@@ -161,11 +204,42 @@ use([
   LegendComponent
 ])
 
+interface PcapFile {
+  name: string
+  path: string
+  size: number
+  size_mb: number
+}
+
+interface ModelInfo {
+  name: string
+  file: string
+  type: string
+  metadata?: any
+}
+
 const systemStore = useSystemStore()
 const startDialogVisible = ref(false)
+const loadingPcaps = ref(false)
+const loadingInterfaces = ref(false)
+const loadingModels = ref(false)
+const pcapFiles = ref<PcapFile[]>([])
+const pcapDirectory = ref('')
+const networkInterfaces = ref<string[]>([])
+const defaultInterface = ref('')
+const availableModels = ref<ModelInfo[]>([])
+
 const startForm = reactive({
   mode: 'pcap',
-  source: ''
+  source: '',
+  model: 'lightgbm_cicids'
+})
+
+const canStart = computed(() => {
+  if (startForm.mode === 'pcap') {
+    return !!startForm.source
+  }
+  return true
 })
 
 const statusType = computed(() => {
@@ -243,7 +317,10 @@ const trafficChartOption = computed(() => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
+  // Fetch current system status first
+  await systemStore.fetchSystemStatus()
+  // Then connect WebSocket for real-time updates
   systemStore.connectWebSocket()
 })
 
@@ -251,12 +328,87 @@ onUnmounted(() => {
   systemStore.disconnectWebSocket()
 })
 
-const handleStart = () => {
+const fetchPcapFiles = async () => {
+  loadingPcaps.value = true
+  try {
+    const response = await api.get('/datasets/pcaps')
+    pcapFiles.value = response.data.files
+    pcapDirectory.value = response.data.directory
+    // Auto-select first file if available
+    if (pcapFiles.value.length > 0 && !startForm.source) {
+      startForm.source = pcapFiles.value[0].path
+    }
+  } catch (error) {
+    console.error('Failed to fetch PCAP files', error)
+    ElMessage.warning('Could not load PCAP files list')
+  } finally {
+    loadingPcaps.value = false
+  }
+}
+
+const fetchNetworkInterfaces = async () => {
+  loadingInterfaces.value = true
+  try {
+    const response = await api.get('/system/interfaces')
+    networkInterfaces.value = response.data.interfaces
+    defaultInterface.value = response.data.default
+    // Auto-select default interface if available
+    if (!startForm.source && defaultInterface.value) {
+      startForm.source = defaultInterface.value
+    } else if (!startForm.source && networkInterfaces.value.length > 0) {
+      startForm.source = networkInterfaces.value[0]
+    }
+  } catch (error) {
+    console.error('Failed to fetch network interfaces', error)
+    ElMessage.warning('Could not load network interfaces list')
+  } finally {
+    loadingInterfaces.value = false
+  }
+}
+
+const fetchAvailableModels = async () => {
+  loadingModels.value = true
+  try {
+    const response = await api.get('/models/available')
+    availableModels.value = response.data.models
+    // Auto-select first model if current selection is not in list
+    if (availableModels.value.length > 0) {
+      const modelNames = availableModels.value.map(m => m.name)
+      if (!modelNames.includes(startForm.model)) {
+        startForm.model = availableModels.value[0].name
+      }
+    }
+  } catch (error) {
+    console.error('Failed to fetch available models', error)
+    ElMessage.warning('Could not load models list')
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+const handleStart = async () => {
   startDialogVisible.value = true
+  // Fetch models and PCAP files when dialog opens
+  await fetchAvailableModels()
+  if (startForm.mode === 'pcap') {
+    await fetchPcapFiles()
+  }
+}
+
+const onModeChange = async (mode: string) => {
+  startForm.source = ''
+  if (mode === 'pcap') {
+    await fetchPcapFiles()
+  } else if (mode === 'live') {
+    await fetchNetworkInterfaces()
+  }
 }
 
 const confirmStart = async () => {
   try {
+    // First configure the model
+    await api.post('/system/configure', { model_name: startForm.model })
+    // Then start the system
     await systemStore.startSystem(startForm.mode, startForm.source || undefined)
     ElMessage.success('System start command sent')
     startDialogVisible.value = false
@@ -379,5 +531,11 @@ const formatTime = (ts: string) => {
 .alert-src {
   font-size: 12px;
   color: #606266;
+}
+
+.pcap-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 5px;
 }
 </style>

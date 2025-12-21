@@ -151,15 +151,141 @@ class CICIDS2017FeatureExtractor(FeatureExtractor):
     
     def __init__(self):
         super().__init__()
-        # 78 features (approximate list)
-        self.feature_names = [f"f_{i}" for i in range(78)] 
+        # 78 features based on CIC-IDS2017 dataset
+        self.feature_names = [
+            'Destination Port', 'Flow Duration', 'Total Fwd Packets', 'Total Backward Packets',
+            'Total Length of Fwd Packets', 'Total Length of Bwd Packets', 'Fwd Packet Length Max',
+            'Fwd Packet Length Min', 'Fwd Packet Length Mean', 'Fwd Packet Length Std',
+            'Bwd Packet Length Max', 'Bwd Packet Length Min', 'Bwd Packet Length Mean',
+            'Bwd Packet Length Std', 'Flow Bytes/s', 'Flow Packets/s', 'Flow IAT Mean',
+            'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', 'Fwd IAT Total', 'Fwd IAT Mean',
+            'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', 'Bwd IAT Total', 'Bwd IAT Mean',
+            'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', 'Fwd PSH Flags', 'Bwd PSH Flags',
+            'Fwd URG Flags', 'Bwd URG Flags', 'Fwd Header Length', 'Bwd Header Length',
+            'Fwd Packets/s', 'Bwd Packets/s', 'Min Packet Length', 'Max Packet Length',
+            'Packet Length Mean', 'Packet Length Std', 'Packet Length Variance',
+            'FIN Flag Count', 'SYN Flag Count', 'RST Flag Count', 'PSH Flag Count',
+            'ACK Flag Count', 'URG Flag Count', 'CWE Flag Count', 'ECE Flag Count',
+            'Down/Up Ratio', 'Average Packet Size', 'Avg Fwd Segment Size',
+            'Avg Bwd Segment Size', 'Fwd Header Length.1', 'Fwd Avg Bytes/Bulk',
+            'Fwd Avg Packets/Bulk', 'Fwd Avg Bulk Rate', 'Bwd Avg Bytes/Bulk',
+            'Bwd Avg Packets/Bulk', 'Bwd Avg Bulk Rate', 'Subflow Fwd Packets',
+            'Subflow Fwd Bytes', 'Subflow Bwd Packets', 'Subflow Bwd Bytes',
+            'Init_Win_bytes_forward', 'Init_Win_bytes_backward', 'act_data_pkt_fwd',
+            'min_seg_size_forward', 'Active Mean', 'Active Std', 'Active Max', 'Active Min',
+            'Idle Mean', 'Idle Std', 'Idle Max', 'Idle Min'
+        ]
 
     def get_feature_names(self) -> List[str]:
         return self.feature_names
 
     def extract_features(self, packet_data: Dict[str, Any]) -> np.ndarray:
-        # Placeholder for CIC-IDS2017 extraction
-        return np.zeros(78)
+        """
+        Extract 78 features from packet data.
+        For single packet analysis, many flow-based features are approximated.
+        """
+        features = np.zeros(78)
+        
+        try:
+            # Basic packet info
+            pkt_len = packet_data.get("length", 0)
+            dst_port = packet_data.get("dst_port", 0)
+            src_port = packet_data.get("src_port", 0)
+            protocol = packet_data.get("protocol", "").upper()
+            
+            # TCP flags (if available)
+            tcp_flags = packet_data.get("tcp_flags", {})
+            
+            # Feature extraction
+            features[0] = dst_port  # Destination Port
+            features[1] = 0  # Flow Duration (single packet = 0)
+            features[2] = 1  # Total Fwd Packets
+            features[3] = 0  # Total Backward Packets
+            features[4] = pkt_len  # Total Length of Fwd Packets
+            features[5] = 0  # Total Length of Bwd Packets
+            features[6] = pkt_len  # Fwd Packet Length Max
+            features[7] = pkt_len  # Fwd Packet Length Min
+            features[8] = pkt_len  # Fwd Packet Length Mean
+            features[9] = 0  # Fwd Packet Length Std
+            features[10] = 0  # Bwd Packet Length Max
+            features[11] = 0  # Bwd Packet Length Min
+            features[12] = 0  # Bwd Packet Length Mean
+            features[13] = 0  # Bwd Packet Length Std
+            features[14] = pkt_len * 1000 if pkt_len > 0 else 0  # Flow Bytes/s (approximation)
+            features[15] = 1000  # Flow Packets/s (approximation)
+            features[16] = 0  # Flow IAT Mean
+            features[17] = 0  # Flow IAT Std
+            features[18] = 0  # Flow IAT Max
+            features[19] = 0  # Flow IAT Min
+            features[20] = 0  # Fwd IAT Total
+            features[21] = 0  # Fwd IAT Mean
+            features[22] = 0  # Fwd IAT Std
+            features[23] = 0  # Fwd IAT Max
+            features[24] = 0  # Fwd IAT Min
+            features[25] = 0  # Bwd IAT Total
+            features[26] = 0  # Bwd IAT Mean
+            features[27] = 0  # Bwd IAT Std
+            features[28] = 0  # Bwd IAT Max
+            features[29] = 0  # Bwd IAT Min
+            
+            # TCP Flags
+            features[30] = 1 if tcp_flags.get("PSH", False) else 0  # Fwd PSH Flags
+            features[31] = 0  # Bwd PSH Flags
+            features[32] = 1 if tcp_flags.get("URG", False) else 0  # Fwd URG Flags
+            features[33] = 0  # Bwd URG Flags
+            features[34] = 20 if protocol == "TCP" else 8  # Fwd Header Length
+            features[35] = 0  # Bwd Header Length
+            features[36] = 1000  # Fwd Packets/s
+            features[37] = 0  # Bwd Packets/s
+            features[38] = pkt_len  # Min Packet Length
+            features[39] = pkt_len  # Max Packet Length
+            features[40] = pkt_len  # Packet Length Mean
+            features[41] = 0  # Packet Length Std
+            features[42] = 0  # Packet Length Variance
+            
+            # Flag counts
+            features[43] = 1 if tcp_flags.get("FIN", False) else 0  # FIN Flag Count
+            features[44] = 1 if tcp_flags.get("SYN", False) else 0  # SYN Flag Count
+            features[45] = 1 if tcp_flags.get("RST", False) else 0  # RST Flag Count
+            features[46] = 1 if tcp_flags.get("PSH", False) else 0  # PSH Flag Count
+            features[47] = 1 if tcp_flags.get("ACK", False) else 0  # ACK Flag Count
+            features[48] = 1 if tcp_flags.get("URG", False) else 0  # URG Flag Count
+            features[49] = 1 if tcp_flags.get("CWR", False) else 0  # CWE Flag Count
+            features[50] = 1 if tcp_flags.get("ECE", False) else 0  # ECE Flag Count
+            
+            features[51] = 0  # Down/Up Ratio
+            features[52] = pkt_len  # Average Packet Size
+            features[53] = pkt_len  # Avg Fwd Segment Size
+            features[54] = 0  # Avg Bwd Segment Size
+            features[55] = 20 if protocol == "TCP" else 8  # Fwd Header Length.1
+            features[56] = 0  # Fwd Avg Bytes/Bulk
+            features[57] = 0  # Fwd Avg Packets/Bulk
+            features[58] = 0  # Fwd Avg Bulk Rate
+            features[59] = 0  # Bwd Avg Bytes/Bulk
+            features[60] = 0  # Bwd Avg Packets/Bulk
+            features[61] = 0  # Bwd Avg Bulk Rate
+            features[62] = 1  # Subflow Fwd Packets
+            features[63] = pkt_len  # Subflow Fwd Bytes
+            features[64] = 0  # Subflow Bwd Packets
+            features[65] = 0  # Subflow Bwd Bytes
+            features[66] = packet_data.get("window_size", 65535)  # Init_Win_bytes_forward
+            features[67] = 0  # Init_Win_bytes_backward
+            features[68] = 1  # act_data_pkt_fwd
+            features[69] = 20  # min_seg_size_forward
+            features[70] = 0  # Active Mean
+            features[71] = 0  # Active Std
+            features[72] = 0  # Active Max
+            features[73] = 0  # Active Min
+            features[74] = 0  # Idle Mean
+            features[75] = 0  # Idle Std
+            features[76] = 0  # Idle Max
+            features[77] = 0  # Idle Min
+            
+            return features
+            
+        except Exception as e:
+            logger.error(f"Error extracting CIC-IDS2017 features: {e}")
+            return np.zeros(78)
 
 def get_extractor(dataset_type: str) -> FeatureExtractor:
     """Factory method to get extractor"""

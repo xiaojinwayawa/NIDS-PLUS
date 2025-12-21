@@ -3,7 +3,8 @@ from auth import get_current_user, TokenData
 from typing import List, Optional
 from ml.detection_engine import DetectionEngine
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
+import random
 
 router = APIRouter()
 
@@ -98,3 +99,81 @@ async def mark_false_positive(
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"message": "Alert marked as false positive"}
+
+
+@router.post("/test/generate")
+async def generate_test_alerts(
+    count: int = Query(10, ge=1, le=100),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Generate test alerts for testing purposes"""
+    from db.db_manager import SessionLocal
+    from db.models import AlertModel
+    
+    attack_types = [
+        "DDoS", "Port Scan", "Brute Force", "SQL Injection", 
+        "XSS", "FTP-Patator", "SSH-Patator", "Bot", "Infiltration", "Heartbleed"
+    ]
+    protocols = ["TCP", "UDP", "ICMP", "HTTP", "HTTPS", "SSH", "FTP"]
+    
+    db = SessionLocal()
+    created_alerts = []
+    
+    try:
+        for i in range(count):
+            # Generate random alert data
+            alert = AlertModel(
+                timestamp=datetime.utcnow() - timedelta(minutes=random.randint(0, 60)),
+                src_ip=f"192.168.{random.randint(1, 255)}.{random.randint(1, 255)}",
+                dst_ip=f"10.0.{random.randint(1, 255)}.{random.randint(1, 255)}",
+                src_port=random.randint(1024, 65535),
+                dst_port=random.choice([22, 80, 443, 3306, 8080, 21, 23, 25]),
+                protocol=random.choice(protocols),
+                attack_type=random.choice(attack_types),
+                confidence=round(random.uniform(0.6, 0.99), 4),
+                model_id=1,
+                raw_features={
+                    "flow_duration": random.randint(1000, 100000),
+                    "total_fwd_packets": random.randint(1, 1000),
+                    "total_bwd_packets": random.randint(1, 500),
+                    "flow_bytes_per_s": random.uniform(100, 10000)
+                }
+            )
+            db.add(alert)
+            created_alerts.append({
+                "attack_type": alert.attack_type,
+                "src_ip": alert.src_ip,
+                "confidence": alert.confidence
+            })
+        
+        db.commit()
+        
+        return {
+            "message": f"Generated {count} test alerts",
+            "alerts": created_alerts
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@router.delete("/test/clear")
+async def clear_test_alerts(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Clear all alerts (for testing purposes)"""
+    from db.db_manager import SessionLocal
+    from db.models import AlertModel
+    
+    db = SessionLocal()
+    try:
+        count = db.query(AlertModel).delete()
+        db.commit()
+        return {"message": f"Deleted {count} alerts"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()

@@ -62,11 +62,27 @@ class TrafficCapture(abc.ABC):
                 protocol = "OTHER"
                 src_port = 0
                 dst_port = 0
+                tcp_flags = {}
+                window_size = 0
                 
                 if TCP in packet:
                     protocol = "TCP"
                     src_port = packet[TCP].sport
                     dst_port = packet[TCP].dport
+                    window_size = packet[TCP].window
+                    
+                    # Extract TCP flags
+                    flags = packet[TCP].flags
+                    tcp_flags = {
+                        "FIN": bool(flags & 0x01),
+                        "SYN": bool(flags & 0x02),
+                        "RST": bool(flags & 0x04),
+                        "PSH": bool(flags & 0x08),
+                        "ACK": bool(flags & 0x10),
+                        "URG": bool(flags & 0x20),
+                        "ECE": bool(flags & 0x40),
+                        "CWR": bool(flags & 0x80),
+                    }
                 elif UDP in packet:
                     protocol = "UDP"
                     src_port = packet[UDP].sport
@@ -81,18 +97,14 @@ class TrafficCapture(abc.ABC):
                     "dst_port": dst_port,
                     "protocol": protocol,
                     "length": length,
-                    # We might need raw bytes or more fields for feature extraction later
-                    # For now, let's keep it lightweight for the queue
-                    # "raw": bytes(packet).hex() 
+                    "tcp_flags": tcp_flags,
+                    "window_size": window_size,
                 }
                 
                 # Push to Redis list (Queue)
                 if self.redis_client:
                     # Use lpush to add to the head of the list
                     self.redis_client.lpush("traffic_queue", json.dumps(packet_data))
-                    
-                    # Optional: Trim list to prevent memory issues if consumer is slow
-                    # self.redis_client.ltrim("traffic_queue", 0, settings.MAX_QUEUE_SIZE - 1)
                     
         except Exception as e:
             logger.error(f"Error processing packet: {e}")

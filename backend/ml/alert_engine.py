@@ -48,9 +48,16 @@ class AlertEngine:
             return None
             
         try:
+            # Handle timestamp - could be float, int, or missing
+            pkt_timestamp = packet_info.get("timestamp", 0)
+            if isinstance(pkt_timestamp, (int, float)) and pkt_timestamp > 0:
+                alert_timestamp = datetime.fromtimestamp(pkt_timestamp)
+            else:
+                alert_timestamp = datetime.utcnow()
+            
             # Create alert record
             alert = AlertModel(
-                timestamp=datetime.fromtimestamp(packet_info.get("timestamp", 0)),
+                timestamp=alert_timestamp,
                 src_ip=packet_info.get("src_ip", "0.0.0.0"),
                 dst_ip=packet_info.get("dst_ip", "0.0.0.0"),
                 src_port=packet_info.get("src_port", 0),
@@ -85,11 +92,30 @@ class AlertEngine:
         finally:
             db.close()
 
-    def get_alerts(self, limit: int = 100, skip: int = 0) -> List[AlertModel]:
+    def get_alerts(self, limit: int = 100, skip: int = 0) -> List[Dict[str, Any]]:
         """Get recent alerts"""
         db = SessionLocal()
         try:
-            return db.query(AlertModel).order_by(AlertModel.id.desc()).offset(skip).limit(limit).all()
+            alerts = db.query(AlertModel).order_by(AlertModel.id.desc()).offset(skip).limit(limit).all()
+            # Convert to dict for JSON serialization
+            result = []
+            for alert in alerts:
+                result.append({
+                    "id": alert.id,
+                    "timestamp": alert.timestamp,
+                    "src_ip": alert.src_ip,
+                    "dst_ip": alert.dst_ip,
+                    "src_port": alert.src_port,
+                    "dst_port": alert.dst_port,
+                    "protocol": alert.protocol,
+                    "attack_type": alert.attack_type,
+                    "confidence": alert.confidence,
+                    "is_false_positive": alert.is_false_positive
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Error getting alerts: {e}")
+            return []
         finally:
             db.close()
 

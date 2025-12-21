@@ -173,6 +173,20 @@ export const useSystemStore = defineStore('system', () => {
   async function stopSystem() {
     await api.post('/system/stop')
   }
+  
+  async function fetchSystemStatus() {
+    try {
+      const response = await api.get('/system/status')
+      const state = response.data.state?.toLowerCase()
+      if (state && ['idle', 'running', 'stopped', 'error'].includes(state)) {
+        systemState.value = state as 'idle' | 'running' | 'stopped' | 'error'
+      }
+      return response.data
+    } catch (e) {
+      console.error("Failed to fetch system status", e)
+      return null
+    }
+  }
 
   return {
     isAuthenticated,
@@ -191,6 +205,7 @@ export const useSystemStore = defineStore('system', () => {
     connectWebSocket,
     disconnectWebSocket,
     startSystem,
-    stopSystem
+    stopSystem,
+    fetchSystemStatus
   }
 })

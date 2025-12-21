@@ -8,7 +8,7 @@ import time
 import numpy as np
 import pandas as pd
 import joblib
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, Callable
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import lightgbm as lgb
@@ -17,14 +17,38 @@ import xgboost as xgb
 from config import settings
 from logging_config import app_logger as logger
 
+# Get project root directory
+_current_file = os.path.abspath(__file__)
+_ml_dir = os.path.dirname(_current_file)         # backend/ml
+_backend_dir = os.path.dirname(_ml_dir)          # backend
+_project_root = os.path.dirname(_backend_dir)    # project_root
+_default_models_dir = os.path.join(_project_root, "models")
+_default_data_dir = os.path.join(_project_root, "data")
+
+# Global training progress storage
+_training_progress: Dict[str, Dict[str, Any]] = {}
+
+def get_training_progress(task_id: str) -> Optional[Dict[str, Any]]:
+    """Get training progress for a task"""
+    return _training_progress.get(task_id)
+
+def set_training_progress(task_id: str, progress: Dict[str, Any]):
+    """Set training progress for a task"""
+    _training_progress[task_id] = progress
+
+def clear_training_progress(task_id: str):
+    """Clear training progress for a task"""
+    if task_id in _training_progress:
+        del _training_progress[task_id]
+
 class TrainingManager:
     """
     Manages model training lifecycle
     """
     
-    def __init__(self, models_dir: str = "models", data_dir: str = "data"):
-        self.models_dir = models_dir
-        self.data_dir = data_dir
+    def __init__(self, models_dir: str = None, data_dir: str = None):
+        self.models_dir = models_dir or _default_models_dir
+        self.data_dir = data_dir or _default_data_dir
         
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir)
@@ -70,7 +94,8 @@ class TrainingManager:
                    model_type: str, 
                    dataset_path: str, 
                    params: Dict[str, Any] = None,
-                   model_name: str = "new_model") -> Dict[str, Any]:
+                   model_name: str = "new_model",
+                   task_id: str = None) -> Dict[str, Any]:
         """
         Train a new model
         
@@ -79,15 +104,35 @@ class TrainingManager:
             dataset_path: Path to CSV data
             params: Hyperparameters
             model_name: Name for saving
+            task_id: Optional task ID for progress tracking
             
         Returns:
             Dictionary with training metrics
         """
         start_time = time.time()
+        num_boost_round = 100
         
-        # Load Data
+        def update_progress(stage: str, current: int, total: int, message: str = ""):
+            if task_id:
+                progress = {
+                    "stage": stage,
+                    "current": current,
+                    "total": total,
+                    "percent": int((current / total) * 100) if total > 0 else 0,
+                    "message": message,
+                    "elapsed": time.time() - start_time
+                }
+                set_training_progress(task_id, progress)
+        
+        # Stage 1: Load Data (10%)
+        update_progress("loading", 0, 100, "Loading dataset...")
         X, y = self.load_dataset(dataset_path)
+        update_progress("loading", 10, 100, f"Dataset loaded: {len(X)} samples")
+        
+        # Stage 2: Split Data (15%)
+        update_progress("preprocessing", 10, 100, "Splitting data...")
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        update_progress("preprocessing", 15, 100, f"Train: {len(X_train)}, Test: {len(X_test)}")
         
         model = None
         
@@ -100,15 +145,28 @@ class TrainingManager:
                 train_data = lgb.Dataset(X_train, label=y_train)
                 test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
                 
+                # Custom callback for progress
+                def lgb_progress_callback(env):
+                    iteration = env.iteration + 1
+                    # Training is 15% to 85%
+                    progress_pct = 15 + int((iteration / num_boost_round) * 70)
+                    update_progress("training", progress_pct, 100, f"Training iteration {iteration}/{num_boost_round}")
+                
+                update_progress("training", 15, 100, "Starting LightGBM training...")
                 model = lgb.train(
                     params,
                     train_data,
                     valid_sets=[test_data],
-                    num_boost_round=100,
-                    callbacks=[lgb.early_stopping(stopping_rounds=10), lgb.log_evaluation(0)]
+                    num_boost_round=num_boost_round,
+                    callbacks=[
+                        lgb.early_stopping(stopping_rounds=10), 
+                        lgb.log_evaluation(0),
+                        lgb_progress_callback
+                    ]
                 )
                 
                 # Predict
+                update_progress("evaluating", 85, 100, "Evaluating model...")
                 y_pred_prob = model.predict(X_test)
                 y_pred = (y_pred_prob > 0.5).astype(int)
                 
@@ -119,22 +177,34 @@ class TrainingManager:
                 dtrain = xgb.DMatrix(X_train, label=y_train)
                 dtest = xgb.DMatrix(X_test, label=y_test)
                 
+                # Custom callback for progress
+                class XGBProgressCallback(xgb.callback.TrainingCallback):
+                    def after_iteration(self, model, epoch, evals_log):
+                        iteration = epoch + 1
+                        progress_pct = 15 + int((iteration / num_boost_round) * 70)
+                        update_progress("training", progress_pct, 100, f"Training iteration {iteration}/{num_boost_round}")
+                        return False
+                
+                update_progress("training", 15, 100, "Starting XGBoost training...")
                 model = xgb.train(
                     params,
                     dtrain,
-                    num_boost_round=100,
+                    num_boost_round=num_boost_round,
                     evals=[(dtest, "Test")],
                     early_stopping_rounds=10,
-                    verbose_eval=False
+                    verbose_eval=False,
+                    callbacks=[XGBProgressCallback()]
                 )
                 
+                update_progress("evaluating", 85, 100, "Evaluating model...")
                 y_pred_prob = model.predict(dtest)
                 y_pred = (y_pred_prob > 0.5).astype(int)
                 
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")
                 
-            # Calculate Metrics
+            # Calculate Metrics (90%)
+            update_progress("evaluating", 90, 100, "Calculating metrics...")
             metrics = {
                 "accuracy": float(accuracy_score(y_test, y_pred)),
                 "precision": float(precision_score(y_test, y_pred, zero_division=0)),
@@ -145,7 +215,8 @@ class TrainingManager:
             
             logger.info(f"Training completed for {model_name}. Accuracy: {metrics['accuracy']:.4f}")
             
-            # Save Model
+            # Save Model (95%)
+            update_progress("saving", 95, 100, "Saving model...")
             save_path = os.path.join(self.models_dir, f"{model_name}.joblib")
             joblib.dump(model, save_path)
             
@@ -159,9 +230,21 @@ class TrainingManager:
                     "metrics": metrics,
                     "timestamp": time.time()
                 }, f, indent=4)
+            
+            # Complete (100%)
+            update_progress("complete", 100, 100, "Training complete!")
                 
             return metrics
             
         except Exception as e:
             logger.error(f"Error during training: {e}")
+            if task_id:
+                set_training_progress(task_id, {
+                    "stage": "error",
+                    "current": 0,
+                    "total": 100,
+                    "percent": 0,
+                    "message": str(e),
+                    "elapsed": time.time() - start_time
+                })
             raise e
