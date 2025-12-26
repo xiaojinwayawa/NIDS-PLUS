@@ -25,7 +25,18 @@
     </div>
 
     <el-card shadow="hover">
-      <el-table :data="pagedAlerts" style="width: 100%" stripe>
+      <template #header>
+        <div class="card-header-with-tabs">
+          <el-tabs v-model="activeTab" @tab-click="onTabChange">
+            <el-tab-pane label="Alerts" name="alerts" />
+            <el-tab-pane label="FP Governance" name="governance" />
+          </el-tabs>
+        </div>
+      </template>
+      
+      <!-- Alerts Tab -->
+      <div v-if="activeTab === 'alerts'">
+        <el-table :data="pagedAlerts" style="width: 100%" stripe>
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="timestamp" label="Time" min-width="170">
           <template #default="scope">
@@ -61,6 +72,84 @@
           @current-change="onPageChange"
           @size-change="onSizeChange"
         />
+      </div>
+      </div>
+      
+      <!-- FP Governance Tab -->
+      <div v-if="activeTab === 'governance'">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <div class="governance-section">
+              <h3>Governance Rules</h3>
+              <el-table :data="governanceRules" style="width: 100%" size="small">
+                <el-table-column prop="rule_id" label="Rule ID" width="180" />
+                <el-table-column prop="rule_type" label="Type" width="100">
+                  <template #default="scope">
+                    <el-tag size="small">{{ scope.row.rule_type }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="Details" min-width="150">
+                  <template #default="scope">
+                    <span v-if="scope.row.whitelist_ips?.length">IPs: {{ scope.row.whitelist_ips.join(', ') }}</span>
+                    <span v-else-if="scope.row.whitelist_ports?.length">Ports: {{ scope.row.whitelist_ports.join(', ') }}</span>
+                    <span v-else-if="scope.row.feature_name">{{ scope.row.feature_name }} {{ scope.row.feature_condition }} {{ scope.row.feature_value }}</span>
+                    <span v-else-if="scope.row.threshold_adjustment">Threshold +{{ scope.row.threshold_adjustment }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="fp_prevented" label="FP Prevented" width="100" />
+                <el-table-column prop="is_active" label="Active" width="80">
+                  <template #default="scope">
+                    <el-switch v-model="scope.row.is_active" size="small" @change="toggleRule(scope.row)" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="Actions" width="80">
+                  <template #default="scope">
+                    <el-button size="small" type="danger" text @click="deleteRule(scope.row.rule_id)">Delete</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-col>
+          <el-col :span="12">
+            <div class="governance-section">
+              <h3>Suggestions</h3>
+              <div v-if="governanceSuggestions.length === 0" class="no-data">No suggestions available</div>
+              <div v-for="(suggestion, idx) in governanceSuggestions" :key="idx" class="suggestion-item">
+                <div class="suggestion-header">
+                  <el-tag :type="suggestionTagType(suggestion.type)" size="small">{{ suggestion.type }}</el-tag>
+                  <span class="suggestion-confidence">Confidence: {{ (suggestion.confidence * 100).toFixed(0) }}%</span>
+                </div>
+                <p class="suggestion-desc">{{ suggestion.description }}</p>
+                <el-button size="small" type="primary" @click="applySuggestion(suggestion)">Apply</el-button>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+        
+        <el-divider />
+        
+        <div class="governance-section">
+          <h3>FP/FN Metrics Comparison</h3>
+          <div v-if="metricsComparison">
+            <el-row :gutter="20">
+              <el-col :span="8">
+                <el-statistic title="FP Before Rules" :value="metricsComparison.period_before?.false_positives || 0" />
+              </el-col>
+              <el-col :span="8">
+                <el-statistic title="FP After Rules" :value="metricsComparison.period_after?.false_positives || 0" />
+              </el-col>
+              <el-col :span="8">
+                <el-statistic title="FP Prevented" :value="metricsComparison.period_after?.fp_prevented_by_rules || 0" class="success-stat" />
+              </el-col>
+            </el-row>
+            <div v-if="metricsComparison.improvement" class="improvement-info">
+              <el-tag type="success" v-if="metricsComparison.improvement.fp_reduction > 0">
+                {{ metricsComparison.improvement.fp_reduction_percent.toFixed(1) }}% FP Reduction
+              </el-tag>
+            </div>
+          </div>
+          <div v-else class="no-data">No metrics data available</div>
+        </div>
       </div>
     </el-card>
 
@@ -154,6 +243,12 @@ const severityFilter = ref<'high' | 'medium' | 'low' | ''>('')
 
 const detailVisible = ref(false)
 const alertDetail = ref<AlertDetail | null>(null)
+
+// FP Governance
+const activeTab = ref('alerts')
+const governanceRules = ref<any[]>([])
+const governanceSuggestions = ref<any[]>([])
+const metricsComparison = ref<any>(null)
 
 const pagedAlerts = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -281,6 +376,74 @@ const clearAllAlerts = async () => {
 onMounted(() => {
   loadAlerts()
 })
+
+// FP Governance functions
+const onTabChange = () => {
+  if (activeTab.value === 'governance') {
+    loadGovernanceData()
+  }
+}
+
+const loadGovernanceData = async () => {
+  try {
+    const [rulesRes, suggestionsRes, metricsRes] = await Promise.all([
+      api.get('/alerts/governance/rules'),
+      api.get('/alerts/governance/suggestions'),
+      api.get('/alerts/governance/metrics')
+    ])
+    governanceRules.value = rulesRes.data
+    governanceSuggestions.value = suggestionsRes.data
+    metricsComparison.value = metricsRes.data
+  } catch (e: any) {
+    console.error('Failed to load governance data', e)
+  }
+}
+
+const toggleRule = async (rule: any) => {
+  try {
+    await api.put(`/alerts/governance/rules/${rule.rule_id}/toggle`, { is_active: rule.is_active })
+    ElMessage.success('Rule updated')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || 'Failed to update rule')
+  }
+}
+
+const deleteRule = async (ruleId: string) => {
+  try {
+    await ElMessageBox.confirm('Are you sure you want to delete this rule?', 'Warning', {
+      confirmButtonText: 'Yes',
+      cancelButtonText: 'Cancel',
+      type: 'warning'
+    })
+    await api.delete(`/alerts/governance/rules/${ruleId}`)
+    ElMessage.success('Rule deleted')
+    await loadGovernanceData()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.detail || 'Failed to delete rule')
+    }
+  }
+}
+
+const applySuggestion = async (suggestion: any) => {
+  try {
+    await api.post('/alerts/governance/apply-suggestion', suggestion)
+    ElMessage.success('Suggestion applied')
+    await loadGovernanceData()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || 'Failed to apply suggestion')
+  }
+}
+
+const suggestionTagType = (type: string) => {
+  switch (type) {
+    case 'whitelist_ip': return 'primary'
+    case 'whitelist_port': return 'success'
+    case 'threshold': return 'warning'
+    case 'feature_rule': return 'info'
+    default: return 'info'
+  }
+}
 </script>
 
 <style scoped>
@@ -315,5 +478,49 @@ onMounted(() => {
 }
 .no-shap {
   color: #909399;
+}
+.card-header-with-tabs {
+  margin: -20px -20px 0 -20px;
+}
+.governance-section {
+  margin-bottom: 20px;
+}
+.governance-section h3 {
+  margin-bottom: 12px;
+  font-size: 16px;
+  color: #303133;
+}
+.suggestion-item {
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #f5f7fa;
+  border-radius: 6px;
+}
+.suggestion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.suggestion-confidence {
+  font-size: 12px;
+  color: #909399;
+}
+.suggestion-desc {
+  margin: 8px 0;
+  font-size: 13px;
+  color: #606266;
+}
+.no-data {
+  color: #909399;
+  text-align: center;
+  padding: 20px;
+}
+.improvement-info {
+  margin-top: 16px;
+  text-align: center;
+}
+.success-stat :deep(.el-statistic__number) {
+  color: #67c23a;
 }
 </style>

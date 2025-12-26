@@ -87,7 +87,12 @@ export const useSystemStore = defineStore('system', () => {
     // Use relative path for proxy to handle
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    const wsUrl = `${protocol}//${host}/ws`
+    
+    // Add JWT token for authentication
+    const token = localStorage.getItem('token')
+    const wsUrl = token 
+      ? `${protocol}//${host}/ws?token=${encodeURIComponent(token)}`
+      : `${protocol}//${host}/ws`
     
     ws = new WebSocket(wsUrl)
     

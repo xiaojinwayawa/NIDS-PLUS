@@ -39,6 +39,7 @@
             <span>Model Management</span>
           </template>
           <el-menu-item index="/training">Training</el-menu-item>
+          <el-menu-item index="/experiments">Experiments</el-menu-item>
           <el-menu-item index="/performance">Performance</el-menu-item>
           <el-menu-item index="/datasets">Datasets</el-menu-item>
         </el-sub-menu>

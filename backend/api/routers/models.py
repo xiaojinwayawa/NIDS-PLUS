@@ -298,6 +298,34 @@ async def get_train_progress(
         raise HTTPException(status_code=404, detail="Task not found")
     return progress
 
+
+@router.post("/train/stop/{task_id}")
+async def stop_training(
+    task_id: str,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Stop a training task and delete incomplete model"""
+    from ml.trainer import stop_training_task
+    
+    # Mark task as stopped
+    stop_training_task(task_id)
+    
+    # Update progress to show stopped
+    set_training_progress(task_id, {
+        "stage": "stopped",
+        "current": 0,
+        "total": 100,
+        "percent": 0,
+        "message": "Training stopped by user",
+        "elapsed": 0
+    })
+    
+    # Remove from active tasks
+    if task_id in _training_tasks:
+        del _training_tasks[task_id]
+    
+    return {"message": "Training stopped"}
+
 @router.post("/activate/{model_id}")
 async def activate_model(
     model_id: int,

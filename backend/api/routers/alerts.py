@@ -1,12 +1,22 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from auth import get_current_user, TokenData
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from ml.detection_engine import DetectionEngine
+from ml.false_positive_manager import FalsePositiveManager, GovernanceRule
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import random
 
 router = APIRouter()
+
+# FP Manager instance
+_fp_manager: Optional[FalsePositiveManager] = None
+
+def get_fp_manager() -> FalsePositiveManager:
+    global _fp_manager
+    if _fp_manager is None:
+        _fp_manager = FalsePositiveManager()
+    return _fp_manager
 
 def get_engine(request: Request) -> DetectionEngine:
     return request.app.state.engine
@@ -177,3 +187,120 @@ async def clear_test_alerts(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
+
+# ============== FP Governance Endpoints ==============
+
+@router.get("/governance/rules")
+async def get_governance_rules(
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Get all governance rules"""
+    return fp_manager.get_all_rules()
+
+@router.get("/governance/suggestions")
+async def get_governance_suggestions(
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Get governance suggestions based on FP patterns"""
+    return fp_manager.generate_governance_suggestions()
+
+@router.get("/governance/metrics")
+async def get_governance_metrics(
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Get FP/FN metrics comparison"""
+    return fp_manager.get_metrics_comparison()
+
+@router.put("/governance/rules/{rule_id}/toggle")
+async def toggle_governance_rule(
+    rule_id: str,
+    is_active: bool = Query(...),
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Toggle a governance rule on/off"""
+    success = fp_manager.toggle_rule(rule_id, is_active)
+    if not success:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Rule updated", "is_active": is_active}
+
+@router.delete("/governance/rules/{rule_id}")
+async def delete_governance_rule(
+    rule_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Delete a governance rule"""
+    success = fp_manager.remove_rule(rule_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Rule deleted"}
+
+class SuggestionApply(BaseModel):
+    type: str
+    ip: Optional[str] = None
+    port: Optional[int] = None
+    feature: Optional[str] = None
+    current_threshold: Optional[float] = None
+    suggested_threshold: Optional[float] = None
+    avg_value: Optional[float] = None
+    confidence: Optional[float] = None
+
+@router.post("/governance/apply-suggestion")
+async def apply_governance_suggestion(
+    suggestion: SuggestionApply,
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Apply a governance suggestion as a rule"""
+    import time
+    
+    rule_id = f"manual_{suggestion.type}_{int(time.time())}"
+    
+    if suggestion.type == "whitelist_ip" and suggestion.ip:
+        rule = GovernanceRule(
+            rule_id=rule_id,
+            rule_type="whitelist",
+            created_at=datetime.now(),
+            whitelist_ips=[suggestion.ip]
+        )
+    elif suggestion.type == "whitelist_port" and suggestion.port:
+        rule = GovernanceRule(
+            rule_id=rule_id,
+            rule_type="whitelist",
+            created_at=datetime.now(),
+            whitelist_ports=[suggestion.port]
+        )
+    elif suggestion.type == "threshold" and suggestion.suggested_threshold:
+        rule = GovernanceRule(
+            rule_id=rule_id,
+            rule_type="threshold",
+            created_at=datetime.now(),
+            threshold_adjustment=(suggestion.suggested_threshold - (suggestion.current_threshold or 0.5))
+        )
+    elif suggestion.type == "feature_rule" and suggestion.feature:
+        rule = GovernanceRule(
+            rule_id=rule_id,
+            rule_type="feature_rule",
+            created_at=datetime.now(),
+            feature_name=suggestion.feature,
+            feature_condition="lt",
+            feature_value=suggestion.avg_value or 0
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid suggestion type or missing parameters")
+    
+    fp_manager.add_rule(rule)
+    return {"message": "Suggestion applied", "rule_id": rule_id}
+
+@router.get("/governance/feedback-summary")
+async def get_feedback_summary(
+    current_user: TokenData = Depends(get_current_user),
+    fp_manager: FalsePositiveManager = Depends(get_fp_manager)
+):
+    """Get summary of false positive feedbacks"""
+    return fp_manager.get_feedback_summary()

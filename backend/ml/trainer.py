@@ -1,6 +1,7 @@
 """
 Model Training Module
-Handles dataset loading, model training, evaluation, and saving
+Handles dataset loading, model training, evaluation, and saving.
+Supports both traditional ML (LightGBM/XGBoost) and deep learning (CNN/GRU) models.
 """
 import os
 import json
@@ -10,6 +11,7 @@ import pandas as pd
 import joblib
 from typing import Dict, Any, Tuple, Optional, Callable
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import lightgbm as lgb
 import xgboost as xgb
@@ -27,6 +29,7 @@ _default_data_dir = os.path.join(_project_root, "data")
 
 # Global training progress storage
 _training_progress: Dict[str, Dict[str, Any]] = {}
+_stop_flags: Dict[str, bool] = {}
 
 def get_training_progress(task_id: str) -> Optional[Dict[str, Any]]:
     """Get training progress for a task"""
@@ -41,14 +44,28 @@ def clear_training_progress(task_id: str):
     if task_id in _training_progress:
         del _training_progress[task_id]
 
+def stop_training_task(task_id: str):
+    """Signal a training task to stop"""
+    _stop_flags[task_id] = True
+
+def is_training_stopped(task_id: str) -> bool:
+    """Check if training should stop"""
+    return _stop_flags.get(task_id, False)
+
+def clear_stop_flag(task_id: str):
+    """Clear stop flag for a task"""
+    if task_id in _stop_flags:
+        del _stop_flags[task_id]
+
 class TrainingManager:
     """
-    Manages model training lifecycle
+    Manages model training lifecycle for both ML and DL models.
     """
     
     def __init__(self, models_dir: str = None, data_dir: str = None):
         self.models_dir = models_dir or _default_models_dir
         self.data_dir = data_dir or _default_data_dir
+        self.scaler = StandardScaler()
         
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir)
@@ -70,6 +87,8 @@ class TrainingManager:
                 target_col = 'label'
             elif 'class' in df.columns:
                 target_col = 'class'
+            elif 'Label' in df.columns:
+                target_col = 'Label'
             else:
                 # Assume last column
                 target_col = df.columns[-1]
@@ -84,6 +103,10 @@ class TrainingManager:
             # Encode target if string
             if y.dtype == 'object':
                  y = y.astype('category').cat.codes
+            
+            # Handle missing and infinite values
+            X = X.fillna(0)
+            X = X.replace([np.inf, -np.inf], 0)
                  
             return X, y
         except Exception as e:
@@ -97,10 +120,10 @@ class TrainingManager:
                    model_name: str = "new_model",
                    task_id: str = None) -> Dict[str, Any]:
         """
-        Train a new model
+        Train a new model.
         
         Args:
-            model_type: 'lightgbm' or 'xgboost'
+            model_type: 'lightgbm', 'xgboost', 'cnn', or 'gru'
             dataset_path: Path to CSV data
             params: Hyperparameters
             model_name: Name for saving
@@ -109,6 +132,53 @@ class TrainingManager:
         Returns:
             Dictionary with training metrics
         """
+        # Route to appropriate trainer
+        if model_type in ["cnn", "gru"]:
+            return self._train_deep_learning_model(
+                model_type, dataset_path, params, model_name, task_id
+            )
+        else:
+            return self._train_ml_model(
+                model_type, dataset_path, params, model_name, task_id
+            )
+    
+    def _train_deep_learning_model(self,
+                                   model_type: str,
+                                   dataset_path: str,
+                                   params: Dict[str, Any] = None,
+                                   model_name: str = "dl_model",
+                                   task_id: str = None) -> Dict[str, Any]:
+        """Train a deep learning model (CNN or GRU)"""
+        from ml.deep_learning_trainer import DeepLearningTrainer, DeepLearningConfig
+        
+        # Create config from params
+        config = DeepLearningConfig(model_type=model_type)
+        if params:
+            if "epochs" in params:
+                config.epochs = params["epochs"]
+            if "batch_size" in params:
+                config.batch_size = params["batch_size"]
+            if "learning_rate" in params:
+                config.learning_rate = params["learning_rate"]
+            if "random_seed" in params:
+                config.random_seed = params["random_seed"]
+        
+        trainer = DeepLearningTrainer(self.models_dir, self.data_dir)
+        return trainer.train_model(
+            model_type=model_type,
+            dataset_path=dataset_path,
+            config=config,
+            model_name=model_name,
+            task_id=task_id
+        )
+    
+    def _train_ml_model(self, 
+                       model_type: str, 
+                       dataset_path: str, 
+                       params: Dict[str, Any] = None,
+                       model_name: str = "new_model",
+                       task_id: str = None) -> Dict[str, Any]:
+        """Train a traditional ML model (LightGBM or XGBoost)"""
         start_time = time.time()
         num_boost_round = 100
         
@@ -201,7 +271,7 @@ class TrainingManager:
                 y_pred = (y_pred_prob > 0.5).astype(int)
                 
             else:
-                raise ValueError(f"Unsupported model type: {model_type}")
+                raise ValueError(f"Unsupported ML model type: {model_type}")
                 
             # Calculate Metrics (90%)
             update_progress("evaluating", 90, 100, "Calculating metrics...")

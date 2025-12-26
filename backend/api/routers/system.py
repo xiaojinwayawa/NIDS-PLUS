@@ -139,3 +139,46 @@ async def get_interfaces(
         "interfaces": interfaces,
         "default": default_iface
     }
+
+
+# ============== Fusion Config Endpoints ==============
+
+class FusionConfigUpdate(BaseModel):
+    strategy: str = "weighted"
+    cascade_threshold: float = 0.7
+    weights: Dict[str, float] = {}
+
+@router.get("/fusion-config")
+async def get_fusion_config(
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Get model fusion configuration"""
+    if engine.inference_engine:
+        info = engine.inference_engine.get_model_info()
+        return {
+            "fusion_strategy": info.get("fusion_strategy", "weighted"),
+            "cascade_threshold": getattr(engine.inference_engine, "cascade_threshold", 0.7),
+            "model_weights": info.get("model_weights", {})
+        }
+    return {
+        "fusion_strategy": "weighted",
+        "cascade_threshold": 0.7,
+        "model_weights": {}
+    }
+
+@router.put("/fusion-config")
+async def update_fusion_config(
+    config: FusionConfigUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Update model fusion configuration"""
+    if engine.inference_engine:
+        engine.inference_engine.set_fusion_strategy(
+            strategy=config.strategy,
+            weights=config.weights,
+            cascade_threshold=config.cascade_threshold
+        )
+        return {"message": "Fusion configuration updated", "config": config.model_dump()}
+    raise HTTPException(status_code=400, detail="Inference engine not initialized")
