@@ -117,9 +117,9 @@ async def list_datasets(
         if folder_name == "uploads" or not os.path.isdir(folder_path):
             continue
         
-        # Find CSV files in this folder
-        csv_files = [f for f in os.listdir(folder_path) if f.endswith('.csv')]
-        for csv_file in csv_files:
+        # Find CSV, TXT, and ARFF files in this folder
+        dataset_files = [f for f in os.listdir(folder_path) if f.endswith(('.csv', '.txt', '.arff'))]
+        for csv_file in dataset_files:
             csv_path = os.path.join(folder_path, csv_file)
             # Get file info
             try:
@@ -131,13 +131,21 @@ async def list_datasets(
             except:
                 sample_count = 0
             
+            name = csv_file
+            if csv_file.endswith('.csv'):
+                name = csv_file[:-4]
+            elif csv_file.endswith('.txt'):
+                name = csv_file[:-4]
+            elif csv_file.endswith('.arff'):
+                name = csv_file[:-5]
+            
             result.append({
                 "id": preset_id,
-                "name": csv_file.replace('.csv', ''),
+                "name": name,
                 "type": folder_name,
                 "sample_count": sample_count,
                 "created_at": datetime.fromtimestamp(file_stat.st_mtime).isoformat() if file_stat else None,
-                "description": f"Pre-existing {folder_name} dataset",
+                "description": f"Pre-existing {folder_name} dataset ({csv_file.split('.')[-1].upper()})",
                 "source": "preset",
                 "file_path": csv_path
             })

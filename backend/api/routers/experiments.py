@@ -32,12 +32,16 @@ _experiment_tasks: Dict[str, Dict[str, Any]] = {}
 class ExperimentRequest(BaseModel):
     experiment_name: str
     dataset_type: str  # 'nsl-kdd' or 'cic-ids2017'
-    model_types: List[str]  # ['lightgbm', 'xgboost', 'cnn', 'gru']
+    model_types: List[str]  # ['lightgbm', 'xgboost', 'cnn', 'gru', 'transformer']
     random_seed: int = 42
     test_size: float = 0.2
     ml_num_boost_round: int = 100
     dl_epochs: int = 50
     dl_batch_size: int = 64
+    dl_learning_rate: float = 0.001
+    transformer_num_heads: int = 4
+    transformer_ff_dim: int = 128
+    transformer_num_blocks: int = 2
     fusion_strategy: str = "weighted"
 
 
@@ -130,6 +134,10 @@ async def run_experiment(
                 ml_num_boost_round=request.ml_num_boost_round,
                 dl_epochs=request.dl_epochs,
                 dl_batch_size=request.dl_batch_size,
+                dl_learning_rate=request.dl_learning_rate,
+                transformer_num_heads=request.transformer_num_heads,
+                transformer_ff_dim=request.transformer_ff_dim,
+                transformer_num_blocks=request.transformer_num_blocks,
                 fusion_strategy=request.fusion_strategy
             )
             

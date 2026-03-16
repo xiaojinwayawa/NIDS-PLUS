@@ -8,7 +8,7 @@ import threading
 import json
 import redis
 import enum
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import asyncio
 from queue import Queue
 
@@ -19,6 +19,8 @@ from ml.feature_extractor import FeatureExtractor, get_extractor
 from ml.inference_engine import InferenceEngine
 from ml.alert_engine import AlertEngine
 from ml.shap_analyzer import SHAPAnalyzer
+from ml.flow_aggregator import FlowAggregator, FlowAggregatorConfig, FlowFeatureExtractor, FlowState
+from typing import Optional, Dict, Any, List
 
 class SystemState(enum.Enum):
     IDLE = "idle"
@@ -50,6 +52,11 @@ class DetectionEngine:
         self.inference_engine = InferenceEngine()
         self.alert_engine = AlertEngine()
         self.shap_analyzer = SHAPAnalyzer()
+        
+        # Flow aggregation for flow-level detection (SYN flood, etc.)
+        self.flow_aggregator: Optional[FlowAggregator] = None
+        self.flow_feature_extractor: Optional[FlowFeatureExtractor] = None
+        self.use_flow_aggregation = True  # Enable flow-level detection
         
         # Redis for queue consumption
         self.redis_client = None
@@ -149,7 +156,24 @@ class DetectionEngine:
             # 1. Initialize Feature Extractor
             self.feature_extractor = get_extractor(self.dataset_type)
             # Load scalers from project root models directory
-            self.feature_extractor.load_preprocessors(models_dir) 
+            self.feature_extractor.load_preprocessors(models_dir)
+            
+            # 1.5 Initialize Flow Aggregator for flow-level detection
+            if self.use_flow_aggregation:
+                flow_config = FlowAggregatorConfig(
+                    flow_timeout=120.0,        # Active timeout (for continuous attacks)
+                    idle_timeout=10.0,         # Idle timeout (for short attacks, triggers detection)
+                    max_packets_per_flow=500,
+                    enable_bidirectional=True,
+                    tcp_flow_timeout=120.0,    # TCP flow timeout
+                    udp_flow_timeout=120.0,    # UDP flow timeout
+                    icmp_flow_timeout=120.0,   # ICMP flow timeout
+                    fin_immediate_close=False  # Disable FIN immediate close temporarily
+                )
+                self.flow_aggregator = FlowAggregator(flow_config)
+                self.flow_feature_extractor = FlowFeatureExtractor()
+                self.flow_aggregator.start()
+                logger.info("Flow aggregator initialized for flow-level detection with protocol-specific timeouts") 
             
             # 2. Unload all existing models first, then load the selected model
             # This ensures only the selected model is used for inference
@@ -159,8 +183,17 @@ class DetectionEngine:
                 self.inference_engine.unload_model(model_name, version)
             
             # Determine model type from name
-            if "xgb" in self.current_model_name.lower():
+            lower_name = self.current_model_name.lower()
+            if "xgb" in lower_name or "xgboost" in lower_name:
                 self.current_model_type = "xgboost"
+            elif "cnn" in lower_name:
+                self.current_model_type = "cnn"
+            elif "gru" in lower_name:
+                self.current_model_type = "gru"
+            elif "transformer" in lower_name:
+                self.current_model_type = "transformer"
+            elif "lightgbm" in lower_name:
+                self.current_model_type = "lightgbm"
             else:
                 self.current_model_type = "lightgbm"
                 
@@ -216,6 +249,14 @@ class DetectionEngine:
         
         if self.capture:
             self.capture.stop()
+        
+        # Stop flow aggregator
+        if self.flow_aggregator:
+            # Export remaining flows before stopping
+            remaining_flows = self.flow_aggregator.force_export_all()
+            if remaining_flows:
+                logger.info(f"Exported {len(remaining_flows)} remaining flows on shutdown")
+            self.flow_aggregator.stop()
             
         if self.pipeline_thread:
             self.pipeline_thread.join(timeout=5.0)
@@ -232,12 +273,21 @@ class DetectionEngine:
     def _pipeline_loop(self):
         """
         Main processing loop:
-        Redis Queue -> Feature Extraction -> Inference -> Alert -> SHAP -> DB
+        Redis Queue -> Flow Aggregation -> Feature Extraction -> Inference -> Alert -> SHAP -> DB
+        
+        Supports both packet-level and flow-level detection:
+        - Flow-level: Better for detecting SYN floods, port scans, etc.
+        - Packet-level: Fallback when flow aggregation is disabled
         """
         logger.info("Pipeline processing loop started")
         
         batch_size = settings.BATCH_SIZE
         stats_interval = 1.0  # Send stats every 1 second
+        
+        # Track completed flows for batch processing
+        completed_flows = []
+        last_flow_check = time.time()
+        flow_check_interval = 0.5  # Check for completed flows every 0.5s
         
         while not self.stop_event.is_set():
             try:
@@ -253,89 +303,44 @@ class DetectionEngine:
                         break
                 
                 if not packets_data:
-                    # Still send stats periodically even with no data
+                    # Still check for completed flows and send stats
+                    if self.use_flow_aggregation and self.flow_aggregator:
+                        self._process_completed_flows(completed_flows)
                     self._maybe_send_stats()
-                    time.sleep(0.1)
+                    time.sleep(0.05)  # Shorter sleep for faster response
                     continue
+                
+                # 2. Process packets through flow aggregator (if enabled)
+                if self.use_flow_aggregation and self.flow_aggregator:
+                    for pkt in packets_data:
+                        try:
+                            # Add packet to flow aggregator
+                            completed_flow = self.flow_aggregator.add_packet(pkt)
+                            if completed_flow:
+                                completed_flows.append(completed_flow)
+                            
+                            # Collect traffic statistics
+                            self._collect_packet_stats(pkt)
+                            self._packets_processed += 1
+                        except Exception as e:
+                            logger.error(f"Flow aggregation failed: {e}")
                     
-                # 2. Feature Extraction
-                features_batch = []
-                valid_packets = []
-                
-                for pkt in packets_data:
-                    try:
-                        feats = self.feature_extractor.extract_features(pkt)
-                        # Preprocess
-                        feats = self.feature_extractor.preprocess(feats)
-                        features_batch.append(feats)
-                        valid_packets.append(pkt)
-                        
-                        # Collect traffic statistics
-                        self._collect_packet_stats(pkt)
-                    except Exception as e:
-                        logger.error(f"Feature extraction failed: {e}")
-                        
-                if not features_batch:
-                    self._maybe_send_stats()
-                    continue
+                    # Periodically check for timed-out flows
+                    if time.time() - last_flow_check > flow_check_interval:
+                        last_flow_check = time.time()
+                        # Get and process expired (timed-out) flows
+                        expired_flows = self.flow_aggregator.cleanup_and_get_expired_flows()
+                        if expired_flows:
+                            logger.debug(f"Got {len(expired_flows)} expired flows for detection")
+                            completed_flows.extend(expired_flows)
                     
-                import numpy as np
-                X_batch = np.array(features_batch)
-                
-                # Reshape if needed (remove extra dim from preprocess)
-                if X_batch.ndim == 3:
-                    X_batch = X_batch.squeeze(1)
-
-                # 3. Inference
-                inference_start = time.time()
-                results = self.inference_engine.predict_batch(X_batch)
-                predictions = results["predictions"]
-                confidences = results["confidences"]
-                inference_time = (time.time() - inference_start) * 1000  # ms
-                
-                # Log prediction summary for debugging
-                attack_count = sum(1 for p in predictions if p == 1)
-                if attack_count > 0:
-                    logger.info(f"Detected {attack_count} attacks in batch of {len(predictions)}")
-                
-                # Track stats
-                self._packets_processed += len(valid_packets)
-                self._processing_times.append(inference_time / len(valid_packets))
-                
-                # 4. Alerting & SHAP
-                for i, pred in enumerate(predictions):
-                    pkt_info = valid_packets[i]
-                    is_attack = pred == 1
-                    
-                    prediction_result = {
-                        "is_attack": is_attack,
-                        "confidence": confidences[i],
-                        "predictions": [pred],
-                        "attack_type": "Malicious" if is_attack else "Benign"
-                    }
-                    
-                    # Generate Alert
-                    if is_attack:
-                        # Compute SHAP for this attack
-                        shap_analysis = None
-                        if settings.ENABLE_SHAP:
-                             model_key = f"{self.current_model_name}_latest"
-                             shap_res = self.shap_analyzer.compute_shap_values(
-                                 model_key, 
-                                 X_batch[i:i+1],
-                                 self.feature_extractor.get_feature_names()
-                             )
-                             if shap_res:
-                                 shap_analysis = shap_res
-                        
-                        alert = self.alert_engine.generate_alert(
-                            pkt_info, 
-                            prediction_result, 
-                            model_id=1
-                        )
-                        
-                        if alert:
-                            self._broadcast_alert(alert, shap_analysis)
+                    # Process completed flows in batch
+                    if completed_flows:
+                        self._process_completed_flows(completed_flows)
+                        completed_flows = []
+                else:
+                    # Fallback: packet-level detection (original behavior)
+                    self._process_packets_directly(packets_data)
                 
                 # Send stats periodically
                 self._maybe_send_stats()
@@ -345,6 +350,241 @@ class DetectionEngine:
                 time.sleep(1)
                 
         logger.info("Pipeline processing loop exited")
+    
+
+    
+    def _process_completed_flows(self, flows):
+        """Process completed flows through feature extraction and inference"""
+        if not flows:
+            return
+        
+        import numpy as np
+        
+        logger.info(f"Processing {len(flows)} flows for detection")
+        
+        features_batch = []
+        valid_flows = []
+        
+        for i, flow in enumerate(flows):
+            try:
+                # Log flow info
+                protocol = flow.flow_key.protocol
+                fwd_pkts = flow.fwd_packets
+                bwd_pkts = flow.bwd_packets
+                syn_count = flow.syn_count
+                logger.debug(f"Flow {i+1}: {protocol} {flow.flow_key.src_ip}:{flow.flow_key.src_port} -&gt; {flow.flow_key.dst_ip}:{flow.flow_key.dst_port}, fwd={fwd_pkts}, bwd={bwd_pkts}, syn={syn_count}, state={flow.state}")
+                
+                # Extract flow-level features (78 CIC-IDS2017 features)
+                feats = self.flow_feature_extractor.extract_features(flow)
+                
+                # Preprocess (apply scaler if available)
+                if self.feature_extractor.scaler:
+                    feats = self.feature_extractor.scaler.transform(feats.reshape(1, -1)).flatten()
+                
+                features_batch.append(feats)
+                valid_flows.append(flow)
+            except Exception as e:
+                logger.error(f"Flow feature extraction failed: {e}")
+        
+        if not features_batch:
+            logger.warning("No valid features extracted from flows")
+            return
+        
+        X_batch = np.array(features_batch)
+        
+        # Run inference
+        inference_start = time.time()
+        results = self.inference_engine.predict_batch(X_batch)
+        predictions = results["predictions"]
+        confidences = results["confidences"]
+        predicted_types = results.get("attack_types", ["Malicious Traffic"] * len(predictions))
+        inference_time = (time.time() - inference_start) * 1000
+        
+        # Log detection summary
+        attack_count = sum(1 for p in predictions if p == 1)
+        logger.info(f"Inference completed: {attack_count} attacks detected in {len(predictions)} flows, time={inference_time:.2f}ms")
+        
+        for i, (pred, conf, attack_type) in enumerate(zip(predictions, confidences, predicted_types)):
+            flow = valid_flows[i]
+            logger.debug(f"Flow {i+1}: prediction={pred}, confidence={conf:.4f}, attack_type={attack_type}, protocol={flow.flow_key.protocol}, fwd={flow.fwd_packets}, bwd={flow.bwd_packets}")
+        
+        self._processing_times.append(inference_time / len(valid_flows))
+        
+        # Generate alerts for detected attacks
+        for i, pred in enumerate(predictions):
+            flow = valid_flows[i]
+            is_attack = pred == 1
+            
+            if is_attack:
+                logger.warning(f"ATTACK DETECTED! Flow: {flow.flow_key.protocol} {flow.flow_key.src_ip}:{flow.flow_key.src_port} -&gt; {flow.flow_key.dst_ip}:{flow.flow_key.dst_port}, confidence={confidences[i]:.4f}")
+                # Determine attack type from model prediction
+                model_attack_type = predicted_types[i]
+                
+                # Fallback attack type mapping for numeric labels
+                fallback_attack_types = {
+                    "0": "Normal",
+                    "1": "DoS",
+                    "2": "DDoS",
+                    "3": "PortScan",
+                    "4": "WebAttack",
+                    "5": "BruteForce",
+                    "6": "Botnet",
+                    "7": "Infiltration",
+                    "8": "SQL Injection",
+                    "9": "XSS"
+                }
+                
+                # Check if it's a numeric label that needs mapping
+                if model_attack_type and model_attack_type.isdigit():
+                    model_attack_type = fallback_attack_types.get(model_attack_type, f"Attack {model_attack_type}")
+                
+                # Check if it's a specific attack type (not generic)
+                if model_attack_type and model_attack_type.lower() not in ["malicious", "malicious traffic", "normal", "benign", "0", "1"]:
+                    attack_type = model_attack_type
+                else:
+                    # Binary classification - use generic label
+                    attack_type = "Malicious Traffic"
+                
+                # Create packet_info from flow for alert
+                pkt_info = {
+                    "timestamp": flow.start_time,
+                    "src_ip": flow.flow_key.src_ip,
+                    "dst_ip": flow.flow_key.dst_ip,
+                    "src_port": flow.flow_key.src_port,
+                    "dst_port": flow.flow_key.dst_port,
+                    "protocol": flow.flow_key.protocol,
+                    "length": flow.total_bytes,
+                    "flow_packets": flow.total_packets,
+                    "syn_count": flow.syn_count,
+                    "ack_count": flow.ack_count,
+                }
+                
+                prediction_result = {
+                    "is_attack": True,
+                    "confidence": confidences[i],
+                    "predictions": [pred],
+                    "attack_type": attack_type
+                }
+                
+                # Compute SHAP if enabled
+                shap_analysis = None
+                if settings.ENABLE_SHAP:
+                    model_key = f"{self.current_model_name}_latest"
+                    shap_res = self.shap_analyzer.compute_shap_values(
+                        model_key,
+                        X_batch[i:i+1],
+                        self.flow_feature_extractor.get_feature_names()
+                    )
+                    if shap_res:
+                        shap_analysis = shap_res
+                
+                alert = self.alert_engine.generate_alert(
+                    pkt_info,
+                    prediction_result,
+                    model_id=1
+                )
+                
+                if alert:
+                    self._broadcast_alert(alert, shap_analysis)
+    
+    def _classify_attack_type(self, flow, confidence: float) -> str:
+        """Classify attack type - uses model prediction only"""
+        # No hard-coded rules - let the model determine the attack type
+        return "Malicious Traffic"
+    
+    def _process_packets_directly(self, packets_data: List[Dict]):
+        """Original packet-level processing (fallback when flow aggregation disabled)"""
+        import numpy as np
+        
+        features_batch = []
+        valid_packets = []
+        
+        for pkt in packets_data:
+            try:
+                feats = self.feature_extractor.extract_features(pkt)
+                feats = self.feature_extractor.preprocess(feats)
+                features_batch.append(feats)
+                valid_packets.append(pkt)
+                self._collect_packet_stats(pkt)
+            except Exception as e:
+                logger.error(f"Feature extraction failed: {e}")
+        
+        if not features_batch:
+            return
+        
+        X_batch = np.array(features_batch)
+        if X_batch.ndim == 3:
+            X_batch = X_batch.squeeze(1)
+        
+        # Inference
+        inference_start = time.time()
+        results = self.inference_engine.predict_batch(X_batch)
+        predictions = results["predictions"]
+        confidences = results["confidences"]
+        predicted_types = results.get("attack_types", ["Malicious"] * len(predictions))
+        inference_time = (time.time() - inference_start) * 1000
+        
+        self._packets_processed += len(valid_packets)
+        self._processing_times.append(inference_time / len(valid_packets))
+        
+        # Alerting
+        for i, pred in enumerate(predictions):
+            pkt_info = valid_packets[i]
+            is_attack = pred == 1
+            
+            if is_attack:
+                # Determine attack type
+                model_attack_type = predicted_types[i]
+                
+                # Fallback attack type mapping for numeric labels
+                fallback_attack_types = {
+                    "0": "Normal",
+                    "1": "DoS",
+                    "2": "DDoS",
+                    "3": "PortScan",
+                    "4": "WebAttack",
+                    "5": "BruteForce",
+                    "6": "Botnet",
+                    "7": "Infiltration",
+                    "8": "SQL Injection",
+                    "9": "XSS"
+                }
+                
+                # Check if it's a numeric label that needs mapping
+                if model_attack_type and model_attack_type.isdigit():
+                    model_attack_type = fallback_attack_types.get(model_attack_type, f"Attack {model_attack_type}")
+                
+                if model_attack_type and model_attack_type.lower() not in ["malicious", "malicious traffic", "normal", "benign", "0", "1"]:
+                    attack_type = model_attack_type
+                else:
+                    attack_type = "Malicious Traffic"
+
+                prediction_result = {
+                    "is_attack": True,
+                    "confidence": confidences[i],
+                    "predictions": [pred],
+                    "attack_type": attack_type
+                }
+                
+                shap_analysis = None
+                if settings.ENABLE_SHAP:
+                    model_key = f"{self.current_model_name}_latest"
+                    shap_res = self.shap_analyzer.compute_shap_values(
+                        model_key,
+                        X_batch[i:i+1],
+                        self.feature_extractor.get_feature_names()
+                    )
+                    if shap_res:
+                        shap_analysis = shap_res
+                
+                alert = self.alert_engine.generate_alert(
+                    pkt_info,
+                    prediction_result,
+                    model_id=1
+                )
+                
+                if alert:
+                    self._broadcast_alert(alert, shap_analysis)
 
     def _broadcast_alert(self, alert, shap_data=None):
         """Helper to broadcast alert via WS safely using message queue"""

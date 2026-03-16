@@ -34,7 +34,7 @@ class AlertModel(Base):
     protocol = Column(String(10), nullable=True)
     attack_type = Column(String(50), nullable=False, index=True)
     confidence = Column(Float, nullable=False)
-    model_id = Column(Integer, nullable=True) # Foreign key to models table
+    model_id = Column(Integer, ForeignKey("models.id"), nullable=True) # Foreign key to models table (nullable)
     is_false_positive = Column(Boolean, default=False)
     marked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     marked_at = Column(DateTime(timezone=True), nullable=True)

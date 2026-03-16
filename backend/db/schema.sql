@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     INDEX idx_timestamp (timestamp),
     INDEX idx_attack_type (attack_type),
     INDEX idx_src_ip (src_ip),
-    FOREIGN KEY (model_id) REFERENCES models(id),
-    FOREIGN KEY (marked_by) REFERENCES users(id)
+    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE SET NULL,
+    FOREIGN KEY (marked_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Model metrics table
@@ -127,6 +127,12 @@ CREATE TABLE IF NOT EXISTS system_config (
 -- Updated hash to match bcrypt 3.2.2 format
 INSERT INTO users (username, password_hash, email, role) VALUES
 ('admin', '$2b$12$mUzDG9GwJXghc5RhwdiAnO9Gn2pGqHvf8pvhD58rMuV.rDx4GXA8W', 'admin@nids.local', 'admin');
+
+-- Insert default models
+INSERT INTO models (name, type, version, file_path, dataset_type, is_active) VALUES
+('lightgbm_cicids', 'lightgbm', '1.0.0', '/app/models/lightgbm_baseline.joblib', 'cic-ids2017', TRUE),
+('lightgbm_nslkdd', 'lightgbm', '1.0.0', '/app/models/lightgbm_baseline.joblib', 'nsl-kdd', FALSE),
+('lgb_multiclass', 'lightgbm', '1.0.0', '/app/models/test_multiclass/lgb_multiclass.joblib', 'cic-ids2017', FALSE);
 
 -- Insert default system configuration
 INSERT INTO system_config (config_key, config_value, value_type, description) VALUES

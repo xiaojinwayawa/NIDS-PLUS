@@ -43,6 +43,15 @@
             <el-option label="CIC-IDS2017" value="cic-ids2017" />
           </el-select>
         </el-form-item>
+        <el-form-item label="Models">
+          <el-checkbox-group v-model="newExpForm.model_types">
+            <el-checkbox label="lightgbm">LightGBM</el-checkbox>
+            <el-checkbox label="xgboost">XGBoost</el-checkbox>
+            <el-checkbox label="cnn">1D-CNN</el-checkbox>
+            <el-checkbox label="gru">GRU</el-checkbox>
+            <el-checkbox label="transformer">Transformer</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showNewExperiment = false">Cancel</el-button>

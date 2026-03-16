@@ -121,7 +121,11 @@ class FlowAggregatorConfig:
                  max_packets_per_flow: int = 1000, # Max packets to store per flow
                  sequence_window_size: int = 100,  # Window size for sequence samples
                  sequence_step_size: int = 50,     # Step size for sliding window
-                 enable_bidirectional: bool = True # Track bidirectional flows
+                 enable_bidirectional: bool = True, # Track bidirectional flows
+                 tcp_flow_timeout: float = 30.0,    # TCP flow timeout
+                 udp_flow_timeout: float = 5.0,     # UDP flow timeout (shorter)
+                 icmp_flow_timeout: float = 2.0,    # ICMP flow timeout (very short)
+                 fin_immediate_close: bool = True   # Immediately close flow on FIN/RST flag
                  ):
         self.flow_timeout = flow_timeout
         self.idle_timeout = idle_timeout
@@ -129,6 +133,10 @@ class FlowAggregatorConfig:
         self.sequence_window_size = sequence_window_size
         self.sequence_step_size = sequence_step_size
         self.enable_bidirectional = enable_bidirectional
+        self.tcp_flow_timeout = tcp_flow_timeout
+        self.udp_flow_timeout = udp_flow_timeout
+        self.icmp_flow_timeout = icmp_flow_timeout
+        self.fin_immediate_close = fin_immediate_close
 
 
 class FlowAggregator:
@@ -167,7 +175,7 @@ class FlowAggregator:
                 logger.error(f"Error in flow cleanup: {e}")
             time.sleep(10.0)  # Check every 10 seconds
     
-    def _cleanup_expired_flows(self) -> List[FlowRecord]:
+    def _cleanup_expired_flows(self):
         """Remove expired flows and return them for processing"""
         current_time = time.time()
         expired_flows = []
@@ -177,14 +185,27 @@ class FlowAggregator:
             for key, flow in self.flows.items():
                 time_since_update = current_time - flow.last_update_time
                 
+                protocol = flow.flow_key.protocol.upper()
+                
+                # Get timeout based on protocol
+                if protocol == 'TCP':
+                    timeout = getattr(self.config, 'tcp_flow_timeout', self.config.flow_timeout)
+                elif protocol == 'UDP':
+                    timeout = getattr(self.config, 'udp_flow_timeout', self.config.flow_timeout)
+                elif protocol == 'ICMP':
+                    timeout = getattr(self.config, 'icmp_flow_timeout', self.config.flow_timeout)
+                else:
+                    timeout = self.config.flow_timeout
+                
                 # Check for timeout
-                if time_since_update > self.config.flow_timeout:
+                if time_since_update > timeout:
                     flow.state = FlowState.TIMEOUT
                     expired_flows.append(flow)
                     keys_to_remove.append(key)
                 elif time_since_update > self.config.idle_timeout:
                     flow.state = FlowState.IDLE
-                    # Don't remove idle flows yet, just mark them
+                    expired_flows.append(flow)
+                    keys_to_remove.append(key)
             
             for key in keys_to_remove:
                 del self.flows[key]
@@ -193,8 +214,11 @@ class FlowAggregator:
             logger.debug(f"Cleaned up {len(expired_flows)} expired flows")
         
         return expired_flows
+    def cleanup_and_get_expired_flows(self):
+        """Public method to cleanup and return expired flows for detection"""
+        return self._cleanup_expired_flows()
 
-    def add_packet(self, packet_data: Dict[str, Any]) -> Optional[FlowRecord]:
+    def add_packet(self, packet_data):
         """
         Add a packet to its corresponding flow.
         Returns the flow record if it's complete/ready for processing.
@@ -237,9 +261,9 @@ class FlowAggregator:
             # Update flow with packet data
             self._update_flow(flow, packet_data, is_forward, current_time)
             
-            # Check if flow is finished (FIN or RST flag)
+            # Check if flow is finished (FIN or RST flag) - controlled by config
             tcp_flags = packet_data.get("tcp_flags", {})
-            if tcp_flags.get("FIN") or tcp_flags.get("RST"):
+            if self.config.fin_immediate_close and (tcp_flags.get("FIN") or tcp_flags.get("RST")):
                 flow.state = FlowState.FINISHED
                 del self.flows[flow_key]
                 return flow

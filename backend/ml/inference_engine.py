@@ -110,7 +110,7 @@ class InferenceEngine:
                 # Handle different model types
                 if model_type in ["lightgbm", "xgboost"]:
                     model, model_path = self._load_ml_model(model_name, model_type)
-                elif model_type in ["cnn", "gru"]:
+                elif model_type in ["cnn", "gru", "transformer"]:
                     model, model_path = self._load_dl_model(model_name, model_type)
                 else:
                     logger.error(f"Unknown model type: {model_type}")
@@ -118,13 +118,33 @@ class InferenceEngine:
                 
                 if model:
                     self.loaded_models[model_key] = model
-                    self.model_metadata[model_key] = {
+                    
+                    # Try to load metadata (label mapping, etc.)
+                    metadata = {
                         "name": model_name,
                         "type": model_type,
                         "version": version,
                         "path": model_path,
-                        "is_deep_learning": model_type in ["cnn", "gru"]
+                        "is_deep_learning": model_type in ["cnn", "gru", "transformer"]
                     }
+                    
+                    # Check for _meta.json file
+                    try:
+                        base_path = os.path.splitext(model_path)[0]
+                        # Handle case where extension might be different or path construction varies
+                        # Try to find meta file in the same directory
+                        dir_name = os.path.dirname(model_path)
+                        meta_path = os.path.join(dir_name, f"{model_name}_meta.json")
+                        
+                        if os.path.exists(meta_path):
+                            with open(meta_path, 'r') as f:
+                                meta_content = json.load(f)
+                                metadata.update(meta_content)
+                                logger.info(f"Loaded metadata for {model_name}")
+                    except Exception as e:
+                        logger.warning(f"Could not load metadata for {model_name}: {e}")
+                    
+                    self.model_metadata[model_key] = metadata
                     logger.info(f"Model {model_key} loaded successfully")
                     return True
                 else:
@@ -231,8 +251,9 @@ class InferenceEngine:
         Returns:
             Dictionary with results:
             {
-                "predictions": List[int],
-                "confidences": List[float],
+                "predictions": List[int],     # 0=Normal, 1=Attack
+                "confidences": List[float],   # Probability of attack
+                "attack_types": List[str],    # Specific attack types (if available)
                 "inference_time_ms": float,
                 "model_breakdown": Dict,
                 "fusion_strategy": str
@@ -248,6 +269,7 @@ class InferenceEngine:
             return {
                 "predictions": [0] * len(features),
                 "confidences": [0.0] * len(features),
+                "attack_types": ["Normal"] * len(features),
                 "inference_time_ms": (time.time() - start_time) * 1000,
                 "error": "No models loaded"
             }
@@ -260,22 +282,36 @@ class InferenceEngine:
             return {
                 "predictions": [0] * len(features),
                 "confidences": [0.0] * len(features),
+                "attack_types": ["Normal"] * len(features),
                 "inference_time_ms": (time.time() - start_time) * 1000,
                 "error": "No matching models"
             }
 
         # Run inference for each model
         model_results = {}
+        model_class_preds = {} # Store raw class predictions (indices)
+        
         for model_key in target_models:
             try:
+                # probs is either 1D array (binary prob) or 2D array (multi-class probs)
                 probs = self._predict_single_model(model_key, features)
+                
                 if probs is not None:
                     model_results[model_key] = probs
+                    
+                    # Also get class predictions if possible
+                    if probs.ndim > 1 and probs.shape[1] > 1:
+                        # Multi-class
+                        model_class_preds[model_key] = np.argmax(probs, axis=1)
+                    else:
+                        # Binary
+                        model_class_preds[model_key] = (probs > 0.5).astype(int)
+                        
             except Exception as e:
                 logger.error(f"Inference error for {model_key}: {e}")
         
         # Apply fusion strategy
-        predictions, confidences = self._apply_fusion(model_results, features)
+        predictions, confidences, attack_types = self._apply_fusion(model_results, model_class_preds, features)
         
         end_time = time.time()
         inference_time_ms = (end_time - start_time) * 1000
@@ -283,6 +319,7 @@ class InferenceEngine:
         return {
             "predictions": predictions,
             "confidences": confidences,
+            "attack_types": attack_types,
             "inference_time_ms": inference_time_ms,
             "model_breakdown": {k: v.tolist() if isinstance(v, np.ndarray) else v 
                                for k, v in model_results.items()},
@@ -311,21 +348,40 @@ class InferenceEngine:
         probs = None
         
         if model_type == "lightgbm":
+            # Check if multiclass
+            is_multiclass = False
+            if hasattr(model, "params") and model.params.get("objective") == "multiclass":
+                is_multiclass = True
+            
             if hasattr(model, "predict_proba"):
-                probs = model.predict_proba(features)[:, 1]
+                if is_multiclass:
+                     probs = model.predict_proba(features)
+                else:
+                     probs = model.predict_proba(features)[:, 1]
             else:
-                probs = model.predict(features)
+                raw_pred = model.predict(features)
+                # LightGBM predict returns raw probs for binary or array for multiclass
+                probs = raw_pred
                 
         elif model_type == "xgboost":
+            # Check if multiclass via metadata or output shape
             if hasattr(model, "predict_proba"):
                 try:
-                    probs = model.predict_proba(features)[:, 1]
+                    full_probs = model.predict_proba(features)
+                    if full_probs.ndim > 1 and full_probs.shape[1] > 2:
+                        probs = full_probs # Return all classes
+                    else:
+                        probs = full_probs[:, 1] # Binary
                 except Exception:
                     import pandas as pd
                     if hasattr(model, 'feature_names_in_'):
                         feature_names = model.feature_names_in_
                         df = pd.DataFrame(features, columns=feature_names)
-                        probs = model.predict_proba(df)[:, 1]
+                        full_probs = model.predict_proba(df)
+                        if full_probs.ndim > 1 and full_probs.shape[1] > 2:
+                            probs = full_probs
+                        else:
+                            probs = full_probs[:, 1]
                     else:
                         dtest = xgb.DMatrix(features)
                         probs = model.predict(dtest)
@@ -337,7 +393,7 @@ class InferenceEngine:
                     dtest = xgb.DMatrix(features)
                 probs = model.predict(dtest)
                 
-        elif model_type in ["cnn", "gru"]:
+        elif model_type in ["cnn", "gru", "transformer"]:
             # Deep learning model
             probs = self._predict_dl_model(model, model_name, features)
         
@@ -354,31 +410,82 @@ class InferenceEngine:
         
         # Handle output shape
         if predictions.ndim > 1 and predictions.shape[1] > 1:
-            # Multi-class: return probability of attack class
-            probs = 1 - predictions[:, 0]  # Assuming class 0 is normal
+            # Multi-class: return full probability distribution
+            return predictions
         else:
-            probs = predictions.flatten()
-        
-        return probs
+            # Binary: return 1D array
+            return predictions.flatten()
     
     def _apply_fusion(self, model_results: Dict[str, np.ndarray], 
-                     features: np.ndarray) -> Tuple[List[int], List[float]]:
+                     model_class_preds: Dict[str, np.ndarray],
+                     features: np.ndarray) -> Tuple[List[int], List[float], List[str]]:
         """Apply fusion strategy to combine model predictions"""
-        if not model_results:
-            n_samples = len(features)
-            return [0] * n_samples, [0.0] * n_samples
-        
         n_samples = len(features)
+        if not model_results:
+            return [0] * n_samples, [0.0] * n_samples, ["Normal"] * n_samples
         
-        if self.fusion_strategy == FusionStrategy.VOTING:
-            return self._fusion_voting(model_results, n_samples)
-        elif self.fusion_strategy == FusionStrategy.WEIGHTED:
-            return self._fusion_weighted(model_results, n_samples)
-        elif self.fusion_strategy == FusionStrategy.CASCADE:
-            return self._fusion_cascade(model_results, n_samples)
+        # Current simplified strategy: 
+        # If we have multi-class results, prioritize them.
+        # Otherwise fall back to standard fusion.
+        
+        # Check if we have any multi-class results
+        multiclass_models = []
+        for key, probs in model_results.items():
+            if probs.ndim > 1 and probs.shape[1] > 1:
+                multiclass_models.append(key)
+        
+        if multiclass_models:
+            # Use the first multi-class model found (simple strategy for now)
+            # In future: could average probabilities across multi-class models
+            primary_key = multiclass_models[0]
+            probs = model_results[primary_key]
+            
+            # Get class indices
+            class_indices = np.argmax(probs, axis=1)
+            confidences = np.max(probs, axis=1).tolist()
+            
+            # Get label mapping if available
+            label_mapping = {}
+            if "label_mapping" in self.model_metadata[primary_key]:
+                label_mapping = self.model_metadata[primary_key]["label_mapping"]
+                # Convert string keys to int if necessary
+                label_mapping = {int(k): v for k, v in label_mapping.items()}
+            
+            attack_types = []
+            predictions = []
+            
+            for idx in class_indices:
+                label = label_mapping.get(idx, str(idx))
+                attack_types.append(label)
+                
+                # Determine binary prediction (Normal/Benign = 0, others = 1)
+                if label.lower() in ["benign", "normal", "0"]:
+                    predictions.append(0)
+                else:
+                    predictions.append(1)
+            
+            return predictions, confidences, attack_types
+            
         else:
-            # Default to weighted
-            return self._fusion_weighted(model_results, n_samples)
+            # Binary fusion logic
+            if self.fusion_strategy == FusionStrategy.VOTING:
+                preds, confs = self._fusion_voting(model_results, n_samples)
+            elif self.fusion_strategy == FusionStrategy.WEIGHTED:
+                preds, confs = self._fusion_weighted(model_results, n_samples)
+            elif self.fusion_strategy == FusionStrategy.CASCADE:
+                preds, confs = self._fusion_cascade(model_results, n_samples)
+            else:
+                preds, confs = self._fusion_weighted(model_results, n_samples)
+            
+            # Map binary predictions to attack types
+            attack_types = []
+            for p in preds:
+                if p == 1:
+                    attack_types.append("Malicious") # Generic label for binary models
+                else:
+                    attack_types.append("Normal")
+                    
+            return preds, confs, attack_types
     
     def _fusion_voting(self, model_results: Dict[str, np.ndarray], 
                       n_samples: int) -> Tuple[List[int], List[float]]:

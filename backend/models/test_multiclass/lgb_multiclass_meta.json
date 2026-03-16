@@ -1,0 +1,1 @@
+{"model_name": "lgb_multiclass", "type": "lightgbm", "label_mapping": {"0": "Normal", "1": "DoS", "2": "PortScan"}, "created_at": "2024-01-01"}

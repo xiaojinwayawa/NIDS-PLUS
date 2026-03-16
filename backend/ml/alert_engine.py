@@ -20,14 +20,14 @@ class AlertEngine:
     def generate_alert(self, 
                        packet_info: Dict[str, Any], 
                        prediction_result: Dict[str, Any],
-                       model_id: int = None) -> Optional[AlertModel]:
+                       model_id: Optional[int] = None) -> Optional[AlertModel]:
         """
         Generate and persist an alert if threat detected
         
         Args:
             packet_info: Packet metadata (src_ip, dst_ip, etc.)
             prediction_result: Result from inference engine (confidences, etc.)
-            model_id: ID of the model used
+            model_id: ID of the model used (can be None)
             
         Returns:
             Created AlertModel or None
@@ -38,10 +38,15 @@ class AlertEngine:
         
         # Simplified logic: if "predictions" is 1 or confidence > threshold
         is_attack = prediction_result.get("is_attack", False)
+        confidence = prediction_result.get("confidence", 0)
+        
         if not is_attack:
             # Check if prediction list indicates attack
             preds = prediction_result.get("predictions", [])
             if preds and preds[0] == 1:
+                is_attack = True
+            # Also alert on high confidence even if model says normal (for detection of Nmap scans)
+            elif confidence > 0.5:
                 is_attack = True
                 
         if not is_attack:
@@ -55,7 +60,7 @@ class AlertEngine:
             else:
                 alert_timestamp = datetime.utcnow()
             
-            # Create alert record
+            # Create alert record (model_id can be None)
             alert = AlertModel(
                 timestamp=alert_timestamp,
                 src_ip=packet_info.get("src_ip", "0.0.0.0"),

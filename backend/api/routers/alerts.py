@@ -118,7 +118,8 @@ async def generate_test_alerts(
 ):
     """Generate test alerts for testing purposes"""
     from db.db_manager import SessionLocal
-    from db.models import AlertModel
+    from db.models import AlertModel, ModelModel
+    from api.websocket_manager import manager as ws_manager
     
     attack_types = [
         "DDoS", "Port Scan", "Brute Force", "SQL Injection", 
@@ -128,12 +129,17 @@ async def generate_test_alerts(
     
     db = SessionLocal()
     created_alerts = []
+    ws_alerts = []
     
     try:
+        # Get an existing model_id or use None
+        model = db.query(ModelModel).first()
+        model_id = model.id if model else None
+        
         for i in range(count):
-            # Generate random alert data
+            # Generate random alert data (use current time for better testing)
             alert = AlertModel(
-                timestamp=datetime.utcnow() - timedelta(minutes=random.randint(0, 60)),
+                timestamp=datetime.utcnow(),
                 src_ip=f"192.168.{random.randint(1, 255)}.{random.randint(1, 255)}",
                 dst_ip=f"10.0.{random.randint(1, 255)}.{random.randint(1, 255)}",
                 src_port=random.randint(1024, 65535),
@@ -141,7 +147,7 @@ async def generate_test_alerts(
                 protocol=random.choice(protocols),
                 attack_type=random.choice(attack_types),
                 confidence=round(random.uniform(0.6, 0.99), 4),
-                model_id=1,
+                model_id=model_id,
                 raw_features={
                     "flow_duration": random.randint(1000, 100000),
                     "total_fwd_packets": random.randint(1, 1000),
@@ -155,8 +161,38 @@ async def generate_test_alerts(
                 "src_ip": alert.src_ip,
                 "confidence": alert.confidence
             })
+            ws_alerts.append(alert)
         
         db.commit()
+        
+        # Broadcast alerts via WebSocket for Dashboard display
+        for alert in ws_alerts:
+            # Get severity based on confidence
+            confidence = alert.confidence
+            if confidence >= 0.9:
+                severity = "critical"
+            elif confidence >= 0.8:
+                severity = "high"
+            elif confidence >= 0.6:
+                severity = "medium"
+            else:
+                severity = "low"
+            
+            alert_msg = {
+                "type": "alert",
+                "data": {
+                    "id": alert.id,
+                    "timestamp": alert.timestamp.isoformat(),
+                    "src_ip": alert.src_ip,
+                    "dst_ip": alert.dst_ip,
+                    "protocol": alert.protocol or "TCP",
+                    "attack_type": alert.attack_type,
+                    "confidence": confidence,
+                    "severity": severity,
+                    "shap_analysis": None
+                }
+            }
+            await ws_manager.broadcast(alert_msg)
         
         return {
             "message": f"Generated {count} test alerts",

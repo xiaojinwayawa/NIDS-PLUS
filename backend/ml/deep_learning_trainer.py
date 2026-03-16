@@ -1,8 +1,8 @@
 """
 Deep Learning Model Training Module
-Supports 1D-CNN and GRU models for network intrusion detection.
+Supports 1D-CNN, GRU and Transformer models for network intrusion detection.
 
-补充需求 A：深度学习模型训练与推理链路（1D-CNN/GRU）
+补充需求 A：深度学习模型训练与推理链路（1D-CNN/GRU/Transformer）
 """
 import os
 import json
@@ -47,7 +47,7 @@ def clear_dl_training_progress(task_id: str):
 class DeepLearningConfig:
     """Configuration for deep learning models"""
     def __init__(self,
-                 model_type: str = "cnn",  # 'cnn' or 'gru'
+                 model_type: str = "cnn",  # 'cnn', 'gru', or 'transformer'
                  input_dim: int = 78,       # Number of input features
                  sequence_length: int = 1,  # For sequence models
                  hidden_units: List[int] = None,
@@ -56,7 +56,11 @@ class DeepLearningConfig:
                  batch_size: int = 64,
                  epochs: int = 50,
                  early_stopping_patience: int = 5,
-                 random_seed: int = 42):
+                 random_seed: int = 42,
+                 # Transformer specific
+                 num_heads: int = 4,
+                 ff_dim: int = 128,
+                 num_transformer_blocks: int = 2):
         self.model_type = model_type
         self.input_dim = input_dim
         self.sequence_length = sequence_length
@@ -67,11 +71,15 @@ class DeepLearningConfig:
         self.epochs = epochs
         self.early_stopping_patience = early_stopping_patience
         self.random_seed = random_seed
+        # Transformer specific
+        self.num_heads = num_heads
+        self.ff_dim = ff_dim
+        self.num_transformer_blocks = num_transformer_blocks
 
 
 class DeepLearningTrainer:
     """
-    Trainer for deep learning models (1D-CNN and GRU).
+    Trainer for deep learning models (1D-CNN, GRU, and Transformer).
     Uses TensorFlow/Keras for model building and training.
     """
     
@@ -112,20 +120,8 @@ class DeepLearningTrainer:
             layers.Input(shape=(config.input_dim,)),
             layers.Reshape((config.input_dim, 1)),
             
-            # First Conv block
-            layers.Conv1D(filters=64, kernel_size=3, activation='relu', padding='same'),
-            layers.BatchNormalization(),
-            layers.MaxPooling1D(pool_size=2),
-            layers.Dropout(config.dropout_rate),
-            
-            # Second Conv block
+            # Single Conv block
             layers.Conv1D(filters=128, kernel_size=3, activation='relu', padding='same'),
-            layers.BatchNormalization(),
-            layers.MaxPooling1D(pool_size=2),
-            layers.Dropout(config.dropout_rate),
-            
-            # Third Conv block
-            layers.Conv1D(filters=64, kernel_size=3, activation='relu', padding='same'),
             layers.BatchNormalization(),
             layers.GlobalAveragePooling1D(),
             layers.Dropout(config.dropout_rate),
@@ -206,19 +202,127 @@ class DeepLearningTrainer:
             )
         
         return model
+    
+    def _build_transformer_model(self, config: DeepLearningConfig, num_classes: int):
+        """
+        Build Transformer model for intrusion detection.
+        Uses Multi-Head Self-Attention to capture feature relationships.
+        """
+        import tensorflow as tf
+        from tensorflow import keras
+        from tensorflow.keras import layers
+        
+        # Set random seed
+        tf.random.set_seed(config.random_seed)
+        np.random.seed(config.random_seed)
+        
+        def transformer_encoder_block(inputs, head_size, num_heads, ff_dim, dropout=0.1):
+            """Single Transformer encoder block"""
+            # Multi-Head Self-Attention
+            attention_output = layers.MultiHeadAttention(
+                num_heads=num_heads, 
+                key_dim=head_size,
+                dropout=dropout
+            )(inputs, inputs)
+            attention_output = layers.Dropout(dropout)(attention_output)
+            x1 = layers.LayerNormalization(epsilon=1e-6)(inputs + attention_output)
+            
+            # Feed Forward Network
+            ffn_output = layers.Dense(ff_dim, activation='relu')(x1)
+            ffn_output = layers.Dropout(dropout)(ffn_output)
+            ffn_output = layers.Dense(inputs.shape[-1])(ffn_output)
+            ffn_output = layers.Dropout(dropout)(ffn_output)
+            x2 = layers.LayerNormalization(epsilon=1e-6)(x1 + ffn_output)
+            
+            return x2
+        
+        # Input layer
+        inputs = layers.Input(shape=(config.input_dim,))
+        
+        # Reshape to sequence format: (batch, seq_len, features)
+        # Treat each feature as a token in the sequence
+        x = layers.Reshape((config.input_dim, 1))(inputs)
+        
+        # Project to higher dimension for attention
+        head_size = 32
+        x = layers.Dense(head_size)(x)
+        
+        # Positional encoding (learnable)
+        positions = tf.range(start=0, limit=config.input_dim, delta=1)
+        position_embedding = layers.Embedding(
+            input_dim=config.input_dim, 
+            output_dim=head_size
+        )(positions)
+        x = x + position_embedding
+        
+        # Stack Transformer encoder blocks
+        for _ in range(config.num_transformer_blocks):
+            x = transformer_encoder_block(
+                x, 
+                head_size=head_size,
+                num_heads=config.num_heads, 
+                ff_dim=config.ff_dim, 
+                dropout=config.dropout_rate
+            )
+        
+        # Global pooling
+        x = layers.GlobalAveragePooling1D()(x)
+        
+        # Classification head
+        x = layers.Dense(config.hidden_units[0], activation='relu')(x)
+        x = layers.Dropout(config.dropout_rate)(x)
+        x = layers.Dense(config.hidden_units[1], activation='relu')(x)
+        x = layers.Dropout(config.dropout_rate / 2)(x)
+        
+        # Output layer
+        if num_classes == 2:
+            outputs = layers.Dense(1, activation='sigmoid')(x)
+        else:
+            outputs = layers.Dense(num_classes, activation='softmax')(x)
+        
+        model = keras.Model(inputs=inputs, outputs=outputs)
+        
+        optimizer = keras.optimizers.Adam(learning_rate=config.learning_rate)
+        
+        if num_classes == 2:
+            model.compile(
+                optimizer=optimizer,
+                loss='binary_crossentropy',
+                metrics=['accuracy']
+            )
+        else:
+            model.compile(
+                optimizer=optimizer,
+                loss='sparse_categorical_crossentropy',
+                metrics=['accuracy']
+            )
+        
+        return model
 
-    def load_dataset(self, dataset_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    def load_dataset(self, dataset_path_or_paths: str or List[str]) -> Tuple[np.ndarray, np.ndarray]:
         """
         Load and preprocess dataset for deep learning.
         
         Args:
-            dataset_path: Path to CSV dataset
+            dataset_path_or_paths: Path to CSV dataset or list of paths
             
         Returns:
             Tuple of (X, y) numpy arrays
         """
-        logger.info(f"Loading dataset from {dataset_path}...")
-        df = pd.read_csv(dataset_path)
+        if isinstance(dataset_path_or_paths, str):
+            dataset_path_or_paths = [dataset_path_or_paths]
+        
+        dfs = []
+        for dataset_path in dataset_path_or_paths:
+            logger.info(f"Loading dataset from {dataset_path}...")
+            df_part = pd.read_csv(dataset_path)
+            dfs.append(df_part)
+        
+        if len(dfs) == 1:
+            df = dfs[0]
+        else:
+            df = pd.concat(dfs, ignore_index=True)
+            logger.info(f"Merged {len(dfs)} datasets, total {len(df)} samples")
         
         # Identify target column
         target_col = None
@@ -268,7 +372,7 @@ class DeepLearningTrainer:
         Train a deep learning model.
         
         Args:
-            model_type: 'cnn' or 'gru'
+            model_type: 'cnn', 'gru', or 'transformer'
             dataset_path: Path to training data
             config: Model configuration
             model_name: Name for saving
@@ -332,8 +436,10 @@ class DeepLearningTrainer:
                 model = self._build_cnn_model(config, num_classes)
             elif model_type.lower() == "gru":
                 model = self._build_gru_model(config, num_classes)
+            elif model_type.lower() == "transformer":
+                model = self._build_transformer_model(config, num_classes)
             else:
-                raise ValueError(f"Unsupported model type: {model_type}")
+                raise ValueError(f"Unsupported model type: {model_type}. Supported: cnn, gru, transformer")
             
             update_progress("building", 20, 100, "Model built successfully")
             
@@ -473,18 +579,9 @@ class SequenceModelTrainer:
         model = keras.Sequential([
             layers.Input(shape=(sequence_length, feature_dim)),
             
-            # Conv blocks
-            layers.Conv1D(64, 3, activation='relu', padding='same'),
-            layers.BatchNormalization(),
-            layers.MaxPooling1D(2),
-            layers.Dropout(0.3),
-            
+            # Single Conv block
             layers.Conv1D(128, 3, activation='relu', padding='same'),
             layers.BatchNormalization(),
-            layers.MaxPooling1D(2),
-            layers.Dropout(0.3),
-            
-            layers.Conv1D(64, 3, activation='relu', padding='same'),
             layers.GlobalAveragePooling1D(),
             layers.Dropout(0.3),
             

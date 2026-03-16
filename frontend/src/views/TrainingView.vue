@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="training-container">
     <!-- Training Lock Overlay -->
     <div v-if="training" class="training-overlay">
@@ -26,16 +26,14 @@
       <template #header><span>Train New Model</span></template>
       <el-form :model="form" label-width="120px">
         <el-form-item label="Model Type">
-          <el-select v-model="form.model_type" style="width: 240px">
-            <el-option-group label="Traditional ML">
-              <el-option label="LightGBM" value="lightgbm" />
-              <el-option label="XGBoost" value="xgboost" />
-            </el-option-group>
-            <el-option-group label="Deep Learning">
-              <el-option label="1D-CNN" value="cnn" />
-              <el-option label="GRU" value="gru" />
-            </el-option-group>
-          </el-select>
+          <el-cascader
+            v-model="form.model_type_path"
+            :options="modelTypeOptions"
+            :props="{ expandTrigger: 'click' }"
+            placeholder="Select model type"
+            style="width: 280px"
+            @change="onModelTypeChange"
+          />
         </el-form-item>
         <el-form-item v-if="isDLModel" label="Epochs">
           <el-input-number v-model="form.epochs" :min="1" :max="100" />
@@ -43,13 +41,22 @@
         <el-form-item label="Model Name">
           <el-input v-model="form.model_name" placeholder="Optional (auto-generated if empty)" />
         </el-form-item>
-        <el-form-item label="Dataset">
-          <el-select v-model="form.dataset_id" placeholder="Select dataset" style="width: 320px" @change="onDatasetChange">
+        <el-form-item label="Datasets">
+          <el-select
+            v-model="form.dataset_ids"
+            multiple
+            filterable
+            placeholder="Select one or more datasets"
+            style="width: 320px"
+            @change="onDatasetChange"
+          >
             <el-option v-for="d in datasets" :key="d.id" :label="`${d.name} (${d.type})`" :value="d.id" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="success" @click="startTraining" :disabled="!form.dataset_id">Start Training</el-button>
+          <el-button type="success" @click="startTraining" :disabled="form.dataset_ids.length === 0">
+            Start Training ({{ form.dataset_ids.length }})
+          </el-button>
         </el-form-item>
       </el-form>
       
@@ -80,9 +87,10 @@
             <el-tag :type="scope.row.is_active ? 'success' : 'info'">{{ scope.row.is_active ? 'Active' : 'Inactive' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="120" fixed="right">
+        <el-table-column label="Actions" width="200" fixed="right">
           <template #default="scope">
             <el-button size="small" type="primary" :disabled="scope.row.is_active" @click="activate(scope.row)">Activate</el-button>
+            <el-button size="small" type="danger" :disabled="scope.row.is_active" @click="deleteModel(scope.row)">Delete</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -104,13 +112,40 @@ const training = ref(false)
 const loading = ref(false)
 const trainResult = ref<any>(null)
 const trainProgress = ref<TrainingProgress | null>(null)
-const selectedDataset = ref<DatasetInfo | null>(null)
+const selectedDatasets = ref<DatasetInfo[]>([])
 const currentTaskId = ref<string | null>(null)
 let progressInterval: number | null = null
 
-const form = ref({ model_type: 'lightgbm', model_name: '', dataset_id: null as number | null, epochs: 20 })
-const isDLModel = computed(() => ['cnn', 'gru'].includes(form.value.model_type))
+const form = ref({ model_type: 'lightgbm', model_type_path: ['ml', 'lightgbm'] as string[], model_name: '', dataset_ids: [] as number[], epochs: 20 })
+const isDLModel = computed(() => ['cnn', 'gru', 'transformer'].includes(form.value.model_type))
 const formatTime = (s: number) => s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s/60)}m ${(s%60).toFixed(0)}s`
+
+// Model type cascader options
+const modelTypeOptions = [
+  {
+    value: 'ml',
+    label: '🤖 Traditional ML',
+    children: [
+      { value: 'lightgbm', label: '⚡ LightGBM' },
+      { value: 'xgboost', label: '🚀 XGBoost' }
+    ]
+  },
+  {
+    value: 'dl',
+    label: '🧠 Deep Learning',
+    children: [
+      { value: 'cnn', label: '📊 1D-CNN' },
+      { value: 'gru', label: '🔄 GRU' },
+      { value: 'transformer', label: '🔮 Transformer' }
+    ]
+  }
+]
+
+const onModelTypeChange = (value: string[]) => {
+  if (value && value.length === 2) {
+    form.value.model_type = value[1]
+  }
+}
 
 const loadData = async () => {
   loading.value = true
@@ -127,7 +162,9 @@ const loadData = async () => {
 }
 
 const refresh = () => loadData()
-const onDatasetChange = (id: number) => { selectedDataset.value = datasets.value.find(d => d.id === id) || null }
+const onDatasetChange = (ids: number[]) => {
+  selectedDatasets.value = datasets.value.filter(d => ids.includes(d.id))
+}
 
 const pollProgress = async () => {
   if (!currentTaskId.value) return
@@ -144,21 +181,34 @@ const pollProgress = async () => {
       training.value = false
       stopPolling()
       ElMessage.error(res.data.message || 'Training failed')
+    } else if (res.data.stage === 'stopped') {
+      training.value = false
+      stopPolling()
+      ElMessage.info('Training stopped')
     }
-  } catch (e) {}
+  } catch (e) {
+    // Task not found - training was stopped or completed
+    training.value = false
+    stopPolling()
+  }
 }
 
 const startPolling = () => { if (!progressInterval) progressInterval = window.setInterval(pollProgress, 500) }
 const stopPolling = () => { if (progressInterval) { clearInterval(progressInterval); progressInterval = null } }
 
 const startTraining = async () => {
-  if (!form.value.dataset_id) { ElMessage.warning('Please select dataset'); return }
+  if (form.value.dataset_ids.length === 0) { ElMessage.warning('Please select at least one dataset'); return }
   training.value = true
   trainResult.value = null
   trainProgress.value = null
   try {
-    const payload: any = { model_type: form.value.model_type, dataset_id: form.value.dataset_id, model_name: form.value.model_name || undefined }
-    if (selectedDataset.value?.file_path) payload.dataset_path = selectedDataset.value.file_path
+    const payload: any = {
+      model_type: form.value.model_type,
+      dataset_ids: form.value.dataset_ids,
+      model_name: form.value.model_name || undefined
+    }
+    const datasetPaths = selectedDatasets.value.map(d => d.file_path).filter(Boolean) as string[]
+    if (datasetPaths.length > 0) payload.dataset_paths = datasetPaths
     if (isDLModel.value) payload.epochs = form.value.epochs
     const res = await api.post('/models/train', payload)
     currentTaskId.value = res.data.task_id
@@ -170,16 +220,27 @@ const startTraining = async () => {
 }
 
 const stopTraining = async () => {
+  // 先关闭训练遮罩层，让确认框可见
+  training.value = false
+  
   try {
-    await ElMessageBox.confirm('Stop training and delete incomplete model?', 'Confirm')
+    await ElMessageBox.confirm('Stop training and delete incomplete model?', 'Confirm', {
+      confirmButtonText: 'Stop',
+      cancelButtonText: 'Continue Training',
+      type: 'warning'
+    })
+    // 用户确认停止
     if (currentTaskId.value) {
       try { await api.post(`/models/train/stop/${currentTaskId.value}`) } catch (e) {}
     }
-    training.value = false
     trainProgress.value = null
+    currentTaskId.value = null
     stopPolling()
     ElMessage.info('Training stopped')
-  } catch (e) {}
+  } catch (e) {
+    // 用户点击取消，恢复训练遮罩层
+    training.value = true
+  }
 }
 
 const activate = async (model: any) => {
@@ -189,6 +250,28 @@ const activate = async (model: any) => {
     ElMessage.success('Model activated')
     await loadData()
   } catch (e: any) { ElMessage.error(e.response?.data?.detail || 'Activation failed') }
+}
+
+const deleteModel = async (model: any) => {
+  try {
+    await ElMessageBox.confirm(
+      `Are you sure you want to delete model "${model.name}"? This action cannot be undone.`,
+      'Confirm Delete',
+      {
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+        type: 'warning'
+      }
+    )
+    
+    await api.delete(`/models/${model.id}`)
+    ElMessage.success('Model deleted successfully')
+    await loadData()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.detail || 'Delete failed')
+    }
+  }
 }
 
 onMounted(() => loadData())
