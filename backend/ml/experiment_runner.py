@@ -36,7 +36,8 @@ _backend_dir = os.path.dirname(_ml_dir)
 _project_root = os.path.dirname(_backend_dir)
 _default_data_dir = os.path.join(_project_root, "data")
 _default_results_dir = os.path.join(_project_root, "data", "experiments")
-_default_models_dir = os.path.join(_project_root, "models")
+_default_models_root_dir = os.path.join(_project_root, "models")
+_default_models_dir = os.path.join(_default_models_root_dir, "experiments")
 
 
 @dataclass
@@ -69,6 +70,8 @@ class ExperimentConfig:
     use_focal_loss: bool = True
     use_class_weights: bool = True
     use_one_hot: bool = True
+    use_human_feedback: bool = True  # NEW: Enable Human-in-the-Loop continuous learning
+    human_feedback_oversample_rate: int = 100 # Default oversample multiplier
 
     def get_hash(self) -> str:
         """Get unique hash for this configuration"""
@@ -106,6 +109,17 @@ class ExperimentResult:
     confusion_matrix: List[List[int]]
 
 
+import tensorflow as tf
+
+@tf.keras.saving.register_keras_serializable()
+def focal_loss_fixed(y_true, y_pred):
+    gamma = 2.0
+    alpha = 0.25
+    pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+    pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+    return -tf.reduce_mean(alpha * tf.pow(1. - pt_1, gamma) * tf.math.log(pt_1 + 1e-7)) - \
+           tf.reduce_mean((1 - alpha) * tf.pow(pt_0, gamma) * tf.math.log(1. - pt_0 + 1e-7))
+
 class DatasetPreprocessor:
     """
     Handles dataset loading and preprocessing for experiments.
@@ -120,7 +134,7 @@ class DatasetPreprocessor:
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
     
-    def load_nsl_kdd(self, train_path: str = None, test_path: str = None, use_one_hot: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, str]]:
+    def load_nsl_kdd(self, train_path: str = None, test_path: str = None, use_one_hot: bool = True, config: ExperimentConfig = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, str]]:
         """
         Load and preprocess NSL-KDD dataset.
         
@@ -190,17 +204,36 @@ class DatasetPreprocessor:
             df = df_train
             df['split'] = 'train'
         
-        X_train, X_test, y_train, y_test = self._preprocess_nsl_kdd(df, use_one_hot)
+        X_train, X_test, y_train, y_test = self._preprocess_nsl_kdd(df, use_one_hot, config)
         # For NSL-KDD, we currently stick to binary as per implementation
         label_mapping = {0: 'Normal', 1: 'Attack'}
         return X_train, X_test, y_train, y_test, label_mapping
     
-    def _preprocess_nsl_kdd(self, df: pd.DataFrame, use_one_hot: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _preprocess_nsl_kdd(self, df: pd.DataFrame, use_one_hot: bool = True, config: ExperimentConfig = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Preprocess NSL-KDD dataframe - BINARY CLASSIFICATION ONLY"""
         # Drop difficulty column if exists
         if 'difficulty' in df.columns:
             df = df.drop('difficulty', axis=1)
         
+        # ==========================================
+        # Human-in-the-Loop: Inject False Positive Feedback
+        # ==========================================
+        if config and config.use_human_feedback:
+            fp_csv_path = os.path.join(_project_root, "data", "fp_governance", "human_feedback_fp.csv")
+            if os.path.exists(fp_csv_path):
+                try:
+                    df_fp = pd.read_csv(fp_csv_path)
+                    if not df_fp.empty:
+                        common_cols = list(set(df.columns).intersection(set(df_fp.columns)))
+                        df_fp_aligned = df_fp[common_cols].copy()
+                        if config.human_feedback_oversample_rate > 1:
+                            df_fp_aligned = pd.concat([df_fp_aligned] * config.human_feedback_oversample_rate, ignore_index=True)
+                        df = pd.concat([df, df_fp_aligned], ignore_index=True)
+                        logger.info(f"Injected {len(df_fp)} human feedback samples (Oversampled to {len(df_fp_aligned)}) into training data.")
+                except Exception as e:
+                    logger.error(f"Failed to inject human feedback data: {e}")
+        # ==========================================
+
         # Convert labels to binary (normal=0, attack=1)
         # Force binary classification for experiments
         df['label'] = df['label'].apply(lambda x: 0 if str(x).lower() == 'normal' else 1)
@@ -241,20 +274,57 @@ class DatasetPreprocessor:
         
         return X_train, X_test, y_train, y_test
     
-    def load_cicids2017(self, data_path: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, str]]:
+    def load_cicids2017(self, data_path: str = None, file_paths: List[str] = None, config: ExperimentConfig = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, str]]:
         """
         Load and preprocess CIC-IDS2017 dataset.
+        
+        Args:
+            data_path: Base directory or single file path (backward compatibility)
+            file_paths: List of specific files to load (relative to CIC-IDS2017 directory)
+                       If None, use data_path or load all files from directory
         
         Returns:
             Tuple of (X_train, X_test, y_train, y_test, label_mapping)
         """
+        base_dir = os.path.join(self.data_dir, "datasets", "CIC-IDS2017")
+        
+        # If file_paths is provided, load selected files
+        if file_paths is not None and len(file_paths) > 0:
+            logger.info(f"Loading CIC-IDS2017 from {len(file_paths)} selected file(s)...")
+            dfs = []
+            for file_path in file_paths:
+                full_path = os.path.join(base_dir, file_path)
+                if os.path.exists(full_path):
+                    logger.info(f"Loading {file_path}...")
+                    try:
+                        df_part = pd.read_csv(full_path)
+                        df_part.columns = df_part.columns.str.strip()
+                        dfs.append(df_part)
+                    except Exception as e:
+                        logger.error(f"Failed to load {file_path}: {e}")
+                else:
+                    logger.warning(f"File not found: {file_path}")
+            
+            if not dfs:
+                raise FileNotFoundError("No CIC-IDS2017 files found or loaded")
+            
+            # Merge selected files
+            if len(dfs) == 1:
+                df = dfs[0]
+            else:
+                df = pd.concat(dfs, ignore_index=True)
+                logger.info(f"Merged {len(dfs)} files, total {len(df)} rows")
+            
+            return self._preprocess_cicids2017(df, config)
+        
+        # Backward compatibility: use data_path if provided
         if data_path is None:
             # Try multiple possible paths (files or directories)
             possible_paths = [
-                os.path.join(self.data_dir, "datasets", "CIC-IDS2017", "cicids2017.csv"),
-                os.path.join(self.data_dir, "datasets", "CIC-IDS2017"), # Directory check
-                os.path.join(self.data_dir, "datasets", "cic-ids2017"), # Directory check
-                os.path.join(self.data_dir, "datasets", "CIC-IDS2017", "CICIDS2017.csv"),
+                os.path.join(base_dir, "cicids2017.csv"),
+                base_dir,  # Directory check
+                os.path.join(self.data_dir, "datasets", "cic-ids2017"),
+                os.path.join(base_dir, "CICIDS2017.csv"),
                 os.path.join(self.data_dir, "datasets", "cicids2017.csv"),
                 os.path.join(self.data_dir, "datasets", "CICIDS2017.csv"),
                 os.path.join(self.data_dir, "datasets", "cic-ids2017.csv"),
@@ -284,9 +354,7 @@ class DatasetPreprocessor:
                 f_path = os.path.join(data_path, f)
                 logger.info(f"Loading part: {f}")
                 try:
-                    # Read with some optimization
                     df_part = pd.read_csv(f_path)
-                    # Strip spaces from column names immediately
                     df_part.columns = df_part.columns.str.strip()
                     dfs.append(df_part)
                 except Exception as e:
@@ -303,9 +371,9 @@ class DatasetPreprocessor:
             df = pd.read_csv(data_path)
             df.columns = df.columns.str.strip()
             
-        return self._preprocess_cicids2017(df)
+        return self._preprocess_cicids2017(df, config)
     
-    def _preprocess_cicids2017(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, str]]:
+    def _preprocess_cicids2017(self, df: pd.DataFrame, config: ExperimentConfig = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[int, str]]:
         """Preprocess CIC-IDS2017 dataframe - BINARY CLASSIFICATION ONLY"""
         # Find label column
         label_col = None
@@ -333,6 +401,32 @@ class DatasetPreprocessor:
                 logger.warning("Stratified sampling failed (likely rare classes). Using random sampling.")
                 df = df.sample(n=MAX_SAMPLES, random_state=42)
             logger.info(f"Downsampled shape: {df.shape}")
+
+        # ==========================================
+        # Human-in-the-Loop: Inject False Positive Feedback
+        # ==========================================
+        if config and config.use_human_feedback:
+            fp_csv_path = os.path.join(_project_root, "data", "fp_governance", "human_feedback_fp.csv")
+            if os.path.exists(fp_csv_path):
+                try:
+                    df_fp = pd.read_csv(fp_csv_path)
+                    if not df_fp.empty:
+                        # Ensure columns match as much as possible
+                        common_cols = list(set(df.columns).intersection(set(df_fp.columns)))
+                        
+                        # Only keep common columns for the FP dataframe to prevent NaN injection
+                        df_fp_aligned = df_fp[common_cols].copy()
+                        
+                        # Oversampling FP data to amplify human feedback signal
+                        if config.human_feedback_oversample_rate > 1:
+                            df_fp_aligned = pd.concat([df_fp_aligned] * config.human_feedback_oversample_rate, ignore_index=True)
+                            
+                        # Concat original data with oversampled FP data
+                        df = pd.concat([df, df_fp_aligned], ignore_index=True)
+                        logger.info(f"Injected {len(df_fp)} human feedback samples (Oversampled to {len(df_fp_aligned)}) into training data.")
+                except Exception as e:
+                    logger.error(f"Failed to inject human feedback data: {e}")
+        # ==========================================
 
         # FORCE BINARY CLASSIFICATION for experiments
         # Convert all labels to binary: BENIGN/Normal = 0, Any Attack = 1
@@ -426,22 +520,33 @@ class ExperimentRunner:
         self.data_dir = data_dir or _default_data_dir
         self.results_dir = results_dir or _default_results_dir
         self.models_dir = models_dir or _default_models_dir
-        
+        self.models_root_dir = _default_models_root_dir
+
         os.makedirs(self.results_dir, exist_ok=True)
         os.makedirs(self.models_dir, exist_ok=True)
         
         self.preprocessor = DatasetPreprocessor(self.data_dir)
     
-    def run_experiment(self, config: ExperimentConfig) -> ExperimentResult:
+    def run_experiment(self, config: ExperimentConfig, cicids2017_files: List[str] = None, task_id: str = None) -> ExperimentResult:
         """
         Run a complete experiment with the given configuration.
         
         Args:
             config: Experiment configuration
+            cicids2017_files: Optional list of specific CIC-IDS2017 files to load
+            task_id: Optional task ID for progress reporting
             
         Returns:
             ExperimentResult with all metrics
         """
+        # Define progress updater helper
+        def update_progress(progress: int, message: str):
+            if task_id:
+                from api.routers.experiments import _experiment_tasks
+                if task_id in _experiment_tasks:
+                    _experiment_tasks[task_id]["progress"] = progress
+                    _experiment_tasks[task_id]["message"] = message
+                    
         # Set random seeds for reproducibility
         np.random.seed(config.random_seed)
         
@@ -450,16 +555,20 @@ class ExperimentRunner:
         
         # Load dataset
         logger.info(f"Loading {config.dataset_type} dataset...")
+        update_progress(10, f"正在加载 {config.dataset_type} 数据集...")
+        
         if config.dataset_type.lower() == "nsl-kdd":
-            X_train, X_test, y_train, y_test, label_mapping = self.preprocessor.load_nsl_kdd(use_one_hot=config.use_one_hot)
+            X_train, X_test, y_train, y_test, label_mapping = self.preprocessor.load_nsl_kdd(use_one_hot=config.use_one_hot, config=config)
         elif config.dataset_type.lower() == "cic-ids2017":
-            X_train, X_test, y_train, y_test, label_mapping = self.preprocessor.load_cicids2017()
+            X_train, X_test, y_train, y_test, label_mapping = self.preprocessor.load_cicids2017(file_paths=cicids2017_files, config=config)
         else:
             raise ValueError(f"Unknown dataset: {config.dataset_type}")
         
         num_classes = len(label_mapping)
         logger.info(f"Dataset loaded: Train={len(X_train)}, Test={len(X_test)}, Classes={num_classes}")
         logger.info(f"Class mapping: {label_mapping}")
+        
+        update_progress(20, "数据集加载完成，准备训练...")
         
         # Create directory for models
         exp_models_dir = os.path.join(self.models_dir, experiment_id)
@@ -473,10 +582,15 @@ class ExperimentRunner:
         model_results = {}
         model_paths = {}
         all_predictions = {}
+        all_pred_probs = {}
         total_training_time = 0
         
-        for model_type in config.model_types:
+        total_models = len(config.model_types)
+        
+        for idx, model_type in enumerate(config.model_types):
             logger.info(f"Training {model_type} model...")
+            progress_base = 20 + int((idx / total_models) * 70)
+            update_progress(progress_base, f"正在训练 {model_type} 模型 ({idx+1}/{total_models})...")
             
             # Determine save path
             save_ext = ".keras" if model_type in ["cnn", "gru", "transformer"] else ".joblib"
@@ -495,12 +609,17 @@ class ExperimentRunner:
             
             try:
                 if model_type in ["lightgbm", "xgboost"]:
-                    result, preds, train_time = self._train_ml_model(
+                    result, preds, pred_probs, train_time = self._train_ml_model(
                         model_type, X_train, X_test, y_train, y_test, config, num_classes, save_path
                     )
                 elif model_type in ["cnn", "gru", "transformer"]:
-                    result, preds, train_time = self._train_dl_model(
-                        model_type, X_train, X_test, y_train, y_test, config, num_classes, save_path
+                    # Pass progress updater to DL models if they take long
+                    def dl_progress_callback(epoch, total_epochs):
+                        p = progress_base + int((epoch / total_epochs) * (70 / total_models))
+                        update_progress(p, f"正在训练 {model_type} 模型 (Epoch {epoch}/{total_epochs})...")
+                        
+                    result, preds, pred_probs, train_time = self._train_dl_model(
+                        model_type, X_train, X_test, y_train, y_test, config, num_classes, save_path, progress_callback=dl_progress_callback
                     )
                 else:
                     logger.warning(f"Unknown model type: {model_type}")
@@ -509,6 +628,7 @@ class ExperimentRunner:
                 model_results[model_type] = result
                 model_paths[model_type] = save_path
                 all_predictions[model_type] = preds
+                all_pred_probs[model_type] = pred_probs
                 total_training_time += train_time
                 
             except Exception as e:
@@ -517,10 +637,26 @@ class ExperimentRunner:
         
         # Compute fusion results if multiple models
         if len(all_predictions) > 1:
-            fusion_preds = self._apply_fusion(all_predictions, config.fusion_strategy)
+            fusion_preds, fusion_weights = self._apply_fusion(all_predictions, all_pred_probs, config.fusion_strategy, model_results)
             fusion_metrics = self._compute_metrics(y_test, fusion_preds, num_classes)
             model_results["fusion"] = fusion_metrics
             final_preds = fusion_preds
+            
+            try:
+                from ml.fusion_wrapper import FusionModelWrapper
+                fusion_path = os.path.join(exp_models_dir, "fusion.joblib")
+                sub_models = [{"name": m_type, "type": m_type} for m_type in all_predictions.keys()]
+                fusion_model = FusionModelWrapper(
+                    sub_models=sub_models,
+                    fusion_strategy=config.fusion_strategy,
+                    weights=fusion_weights
+                )
+                fusion_model.save(fusion_path)
+                model_paths["fusion"] = fusion_path
+                logger.info(f"Saved fusion model to {fusion_path}")
+            except Exception as e:
+                logger.error(f"Failed to save fusion model: {e}")
+                
         elif all_predictions:
             final_preds = list(all_predictions.values())[0]
         else:
@@ -563,7 +699,7 @@ class ExperimentRunner:
         return result
     
     def _train_ml_model(self, model_type: str, X_train, X_test, y_train, y_test, 
-                       config: ExperimentConfig, num_classes: int, save_path: str = None) -> Tuple[Dict, np.ndarray, float]:
+                       config: ExperimentConfig, num_classes: int, save_path: str = None) -> Tuple[Dict, np.ndarray, np.ndarray, float]:
         """Train a traditional ML model - BINARY CLASSIFICATION ONLY"""
         import lightgbm as lgb
         import xgboost as xgb
@@ -643,10 +779,10 @@ class ExperimentRunner:
         training_time = time.time() - start_time
         metrics = self._compute_metrics(y_test, y_pred, num_classes)
         
-        return metrics, y_pred, training_time
+        return metrics, y_pred, y_pred_prob, training_time
     
-    def _train_dl_model(self, model_type: str, X_train, X_test, y_train, y_test,
-                       config: ExperimentConfig, num_classes: int, save_path: str = None) -> Tuple[Dict, np.ndarray, float]:
+    def _train_dl_model(self, model_type: str, X_train, X_test, y_train, y_test, 
+                        config: ExperimentConfig, num_classes: int, save_path: str, progress_callback=None) -> Tuple[Dict, np.ndarray, np.ndarray, float]:
         """Train a deep learning model - BINARY CLASSIFICATION ONLY"""
         try:
             import tensorflow as tf
@@ -687,18 +823,7 @@ class ExperimentRunner:
         output_units = 1
             
         if config.use_focal_loss:
-            # Focal loss for binary classification
-            try:
-                def focal_loss(gamma=2., alpha=.25):
-                    def focal_loss_fixed(y_true, y_pred):
-                        pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
-                        pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
-                        return -tf.reduce_mean(alpha * tf.pow(1. - pt_1, gamma) * tf.math.log(pt_1 + 1e-7)) - \
-                               tf.reduce_mean((1 - alpha) * tf.pow(pt_0, gamma) * tf.math.log(1. - pt_0 + 1e-7))
-                    return focal_loss_fixed
-                loss_fn = focal_loss()
-            except Exception as e:
-                logger.warning(f"Could not use focal loss: {e}")
+            loss_fn = focal_loss_fixed
         
         if model_type == "cnn":
             model = keras.Sequential([
@@ -770,18 +895,25 @@ class ExperimentRunner:
             monitor='val_loss', patience=config.ml_early_stopping, restore_best_weights=True
         )
         
+        callbacks = [early_stopping]
+        if progress_callback:
+            class ProgressCallback(keras.callbacks.Callback):
+                def on_epoch_end(self, epoch, logs=None):
+                    progress_callback(epoch + 1, config.dl_epochs)
+            callbacks.append(ProgressCallback())
+        
         model.fit(
             X_train, y_train,
             validation_data=(X_test, y_test),
             epochs=config.dl_epochs,
             batch_size=config.dl_batch_size,
-            callbacks=[early_stopping],
+            callbacks=callbacks,
             class_weight=class_weights,
             verbose=0
         )
         
-        y_pred_prob = model.predict(X_test, verbose=0)
-        y_pred = (y_pred_prob.flatten() > 0.5).astype(int)
+        y_pred_prob = model.predict(X_test, verbose=0).flatten()
+        y_pred = (y_pred_prob > 0.5).astype(int)
         
         training_time = time.time() - start_time
         metrics = self._compute_metrics(y_test, y_pred, num_classes)
@@ -797,55 +929,56 @@ class ExperimentRunner:
         # Clear session to free memory
         keras.backend.clear_session()
         
-        return metrics, y_pred, training_time
+        return metrics, y_pred, y_pred_prob, training_time
     
-    def _apply_fusion(self, predictions: Dict[str, np.ndarray], strategy: str) -> np.ndarray:
+    def _apply_fusion(self, predictions: Dict[str, np.ndarray], pred_probs: Dict[str, np.ndarray], strategy: str, model_results: Dict[str, Dict]) -> Tuple[np.ndarray, Dict[str, float]]:
         """
         Apply fusion strategy to combine predictions from multiple models.
         
         Args:
             predictions: Dict mapping model_name -> predictions array
+            pred_probs: Dict mapping model_name -> prediction probabilities array
             strategy: Fusion strategy - 'voting', 'weighted', or 'cascade'
+            model_results: Dict mapping model_name -> evaluation metrics
             
         Returns:
-            Final fused predictions
+            Tuple of (Final fused predictions, weights dictionary used for fusion)
         """
         pred_arrays = list(predictions.values())
         model_names = list(predictions.keys())
         stacked = np.stack(pred_arrays, axis=0)  # Shape: (num_models, num_samples)
+        weights_dict = {}
         
         if strategy == "voting":
             # Strategy 1: Majority Voting
             # Each model gets one vote, most common prediction wins
             from scipy import stats
             mode_result = stats.mode(stacked, axis=0)
-            return mode_result.mode.flatten()
+            return mode_result.mode.flatten(), weights_dict
         
         elif strategy == "weighted":
             # Strategy 2: Weighted Average
-            # Weight models by their type (ML models get higher weight for speed/accuracy balance)
-            weights = {}
+            # Dynamic Soft Voting based on F1 Score
+            # Extract F1 scores to use as weights
             for name in model_names:
-                if name in ["lightgbm", "xgboost"]:
-                    weights[name] = 1.2  # ML models: slightly higher weight (faster, often accurate)
-                elif name in ["cnn", "gru"]:
-                    weights[name] = 1.0  # DL models: standard weight
-                elif name == "transformer":
-                    weights[name] = 1.1  # Transformer: slightly higher (good at capturing patterns)
-                else:
-                    weights[name] = 1.0  # Default weight
+                f1 = model_results.get(name, {}).get("f1", 0.5)
+                # Ensure minimum weight to avoid zero division
+                weights_dict[name] = max(f1, 0.01)
+                
+            total_weight = sum(weights_dict.values())
             
-            # Apply weighted voting
-            num_samples = stacked.shape[1]
-            weighted_votes = np.zeros((num_samples, 2))  # Binary classification: [class_0, class_1]
+            # Combine probabilities using weights
+            num_samples = list(pred_probs.values())[0].shape[0]
+            fused_probs = np.zeros(num_samples)
             
-            for i, (name, preds) in enumerate(zip(model_names, pred_arrays)):
-                weight = weights.get(name, 1.0)
-                for j, pred in enumerate(preds):
-                    weighted_votes[j, int(pred)] += weight
+            for name in model_names:
+                normalized_weight = weights_dict[name] / total_weight
+                fused_probs += pred_probs[name] * normalized_weight
+                
+            # Convert fused probability back to binary prediction
+            final_preds = (fused_probs > 0.5).astype(int)
             
-            # Return class with highest weighted vote
-            return np.argmax(weighted_votes, axis=1)
+            return final_preds, weights_dict
         
         elif strategy == "cascade":
             # Strategy 3: Cascade (ML → DL)
@@ -898,14 +1031,14 @@ class ExperimentRunner:
                 mode_result = stats.mode(stacked, axis=0)
                 final_preds = mode_result.mode.flatten()
             
-            return final_preds
+            return final_preds, weights_dict
         
         else:
             # Unknown strategy - default to voting
             logger.warning(f"Unknown fusion strategy '{strategy}', using voting instead")
             from scipy import stats
             mode_result = stats.mode(stacked, axis=0)
-            return mode_result.mode.flatten()
+            return mode_result.mode.flatten(), weights_dict
     
     def _compute_metrics(self, y_true, y_pred, num_classes: int = 2) -> Dict[str, float]:
         """Compute evaluation metrics"""
@@ -955,6 +1088,10 @@ class ExperimentRunner:
                 "throughput_samples_per_sec": result.throughput_samples_per_sec
             },
             "model_results": result.model_results,
+            "model_paths": {
+                name: os.path.relpath(path, _project_root).replace("\\", "/")
+                for name, path in result.model_paths.items()
+            },
             "confusion_matrix": result.confusion_matrix
         }
         
@@ -963,73 +1100,6 @@ class ExperimentRunner:
             json.dump(result_dict, f, indent=2)
         
         logger.info(f"Saved experiment result to {result_path}")
-    
-    def run_comparative_experiments(self, dataset_type: str = "nsl-kdd") -> Dict[str, ExperimentResult]:
-        """
-        Run comparative experiments: ML-only, DL-only, and Hybrid.
-        
-        Args:
-            dataset_type: 'nsl-kdd' or 'cic-ids2017'
-            
-        Returns:
-            Dictionary of experiment results
-        """
-        results = {}
-        
-        # ML-only experiment
-        ml_config = ExperimentConfig(
-            experiment_name=f"{dataset_type}_ml_only",
-            dataset_type=dataset_type,
-            model_types=["lightgbm", "xgboost"]
-        )
-        results["ml_only"] = self.run_experiment(ml_config)
-        
-        # DL-only experiment
-        dl_config = ExperimentConfig(
-            experiment_name=f"{dataset_type}_dl_only",
-            dataset_type=dataset_type,
-            model_types=["cnn", "gru", "transformer"]
-        )
-        results["dl_only"] = self.run_experiment(dl_config)
-        
-        # Hybrid experiment
-        hybrid_config = ExperimentConfig(
-            experiment_name=f"{dataset_type}_hybrid",
-            dataset_type=dataset_type,
-            model_types=["lightgbm", "xgboost", "cnn", "gru", "transformer"],
-            fusion_strategy="weighted"
-        )
-        results["hybrid"] = self.run_experiment(hybrid_config)
-        
-        # Generate comparison report
-        self._generate_comparison_report(results, dataset_type)
-        
-        return results
-    
-    def _generate_comparison_report(self, results: Dict[str, ExperimentResult], dataset_type: str):
-        """Generate a comparison report for experiments"""
-        report = {
-            "dataset": dataset_type,
-            "timestamp": datetime.now().isoformat(),
-            "comparison": {}
-        }
-        
-        for name, result in results.items():
-            report["comparison"][name] = {
-                "accuracy": result.accuracy,
-                "precision": result.precision,
-                "recall": result.recall,
-                "f1_score": result.f1_score,
-                "fpr": result.fpr,
-                "fnr": result.fnr,
-                "training_time_sec": result.training_time_sec
-            }
-        
-        report_path = os.path.join(self.results_dir, f"comparison_{dataset_type}_{int(time.time())}.json")
-        with open(report_path, 'w') as f:
-            json.dump(report, f, indent=2)
-        
-        logger.info(f"Generated comparison report: {report_path}")
     
     def export_results(self, experiment_ids: List[str] = None) -> str:
         """

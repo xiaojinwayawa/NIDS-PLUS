@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard-container">
     <div class="header-actions">
-      <h1>Dashboard</h1>
+      <h1>仪表板</h1>
       <div class="controls">
         <el-tag :type="statusType" class="status-tag" size="large" effect="dark">
           {{ systemStore.systemState.toUpperCase() }}
@@ -14,7 +14,7 @@
             :disabled="systemStore.systemState === 'running'"
             @click="handleStart"
           >
-            Start
+            启动
           </el-button>
           <el-button 
             type="danger" 
@@ -22,7 +22,7 @@
             :disabled="systemStore.systemState !== 'running'"
             @click="handleStop"
           >
-            Stop
+            停止
           </el-button>
         </el-button-group>
       </div>
@@ -33,7 +33,8 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Current Throughput</span>
+              <el-icon><DataLine /></el-icon>
+              <span>当前吞吐量</span>
             </div>
           </template>
           <div class="card-value">
@@ -45,7 +46,8 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Latency</span>
+              <el-icon><Clock /></el-icon>
+              <span>延迟</span>
             </div>
           </template>
           <div class="card-value">
@@ -57,7 +59,8 @@
         <el-card shadow="hover" :class="threatClass">
           <template #header>
             <div class="card-header">
-              <span>Threat Level</span>
+              <el-icon><Warning /></el-icon>
+              <span>威胁等级</span>
             </div>
           </template>
           <div class="card-value">
@@ -72,7 +75,7 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Real-time Traffic</span>
+              <span>实时流量</span>
             </div>
           </template>
           <div class="chart-container">
@@ -84,12 +87,12 @@
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Recent Alerts</span>
+              <span>近期告警</span>
             </div>
           </template>
           <div class="alerts-list">
             <div v-if="systemStore.recentAlerts.length === 0" class="no-alerts">
-              No recent alerts
+              暂无告警
             </div>
             <div v-else class="alert-items">
               <div 
@@ -110,34 +113,40 @@
       </el-col>
     </el-row>
 
-    <!-- Start Dialog -->
-    <el-dialog v-model="startDialogVisible" title="Start Detection System" width="500px">
+    <!-- 启动对话框 -->
+    <el-dialog v-model="startDialogVisible" title="启动检测系统" width="500px" modal-class="app-content-dialog-mask">
       <el-form :model="startForm" label-width="100px">
-        <el-form-item label="Model">
+        <el-form-item label="模型">
           <el-select 
             v-model="startForm.model" 
-            placeholder="Select Detection Model"
+            placeholder="选择检测模型"
             :loading="loadingModels"
             style="width: 100%"
           >
-            <el-option 
-              v-for="model in availableModels" 
-              :key="model.name" 
-              :label="`${model.name} (${model.type})`"
-              :value="model.name"
-            />
+            <el-option-group
+              v-for="group in groupedAvailableModels"
+              :key="group.label"
+              :label="group.label"
+            >
+              <el-option 
+                v-for="model in group.options" 
+                :key="model.name" 
+                :label="`${model.display_name || model.name} (${model.type})`"
+                :value="model.name"
+              />
+            </el-option-group>
           </el-select>
         </el-form-item>
-        <el-form-item label="Mode">
+        <el-form-item label="模式">
           <el-select v-model="startForm.mode" @change="onModeChange">
-            <el-option label="PCAP Replay" value="pcap" />
-            <el-option label="Live Capture" value="live" />
+            <el-option label="PCAP 回放" value="pcap" />
+            <el-option label="实时捕获" value="live" />
           </el-select>
         </el-form-item>
-        <el-form-item label="PCAP File" v-if="startForm.mode === 'pcap'">
+        <el-form-item label="PCAP 文件" v-if="startForm.mode === 'pcap'">
           <el-select 
             v-model="startForm.source" 
-            placeholder="Select a PCAP file"
+            placeholder="选择 PCAP 文件"
             :loading="loadingPcaps"
             style="width: 100%"
           >
@@ -149,20 +158,20 @@
             />
           </el-select>
           <div class="pcap-hint" v-if="pcapDirectory">
-            Directory: {{ pcapDirectory }}
+            目录: {{ pcapDirectory }}
           </div>
         </el-form-item>
-        <el-form-item label="Interface" v-if="startForm.mode === 'live'">
+        <el-form-item label="接口" v-if="startForm.mode === 'live'">
           <el-select 
             v-model="startForm.source" 
-            placeholder="Select Network Interface"
+            placeholder="选择网络接口"
             :loading="loadingInterfaces"
             style="width: 100%"
           >
             <el-option 
               v-for="iface in networkInterfaces" 
               :key="iface" 
-              :label="iface === defaultInterface ? `${iface} (default)` : iface"
+              :label="iface === defaultInterface ? `${iface} (默认)` : iface"
               :value="iface"
             />
           </el-select>
@@ -170,8 +179,8 @@
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="startDialogVisible = false">Cancel</el-button>
-          <el-button type="primary" @click="confirmStart" :disabled="!canStart">Start</el-button>
+          <el-button @click="startDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmStart" :disabled="!canStart">启动</el-button>
         </span>
       </template>
     </el-dialog>
@@ -181,7 +190,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useSystemStore } from '@/stores/system'
-import { VideoPlay, VideoPause } from '@element-plus/icons-vue'
+import { VideoPlay, VideoPause, DataLine, Clock, Warning } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -213,8 +222,11 @@ interface PcapFile {
 
 interface ModelInfo {
   name: string
+  display_name?: string
   file: string
   type: string
+  source?: string
+  group?: string
   metadata?: any
 }
 
@@ -236,10 +248,30 @@ const startForm = reactive({
 })
 
 const canStart = computed(() => {
+  if (!startForm.model) {
+    return false
+  }
   if (startForm.mode === 'pcap') {
     return !!startForm.source
   }
   return true
+})
+
+const groupedAvailableModels = computed(() => {
+  const groups = [
+    {
+      label: '单一模型',
+      key: 'single',
+      options: availableModels.value.filter(model => model.group !== 'experiment')
+    },
+    {
+      label: '实验模型',
+      key: 'experiment',
+      options: availableModels.value.filter(model => model.group === 'experiment')
+    }
+  ]
+
+  return groups.filter(group => group.options.length > 0)
 })
 
 const statusType = computed(() => {
@@ -340,7 +372,7 @@ const fetchPcapFiles = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch PCAP files', error)
-    ElMessage.warning('Could not load PCAP files list')
+    ElMessage.warning('无法加载PCAP文件列表')
   } finally {
     loadingPcaps.value = false
   }
@@ -360,7 +392,7 @@ const fetchNetworkInterfaces = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch network interfaces', error)
-    ElMessage.warning('Could not load network interfaces list')
+    ElMessage.warning('无法加载网络接口列表')
   } finally {
     loadingInterfaces.value = false
   }
@@ -380,7 +412,7 @@ const fetchAvailableModels = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch available models', error)
-    ElMessage.warning('Could not load models list')
+    ElMessage.warning('无法加载模型列表')
   } finally {
     loadingModels.value = false
   }
@@ -410,19 +442,19 @@ const confirmStart = async () => {
     await api.post('/system/configure', { model_name: startForm.model })
     // Then start the system
     await systemStore.startSystem(startForm.mode, startForm.source || undefined)
-    ElMessage.success('System start command sent')
+    ElMessage.success('系统启动命令已发送')
     startDialogVisible.value = false
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || 'Failed to start system')
+    ElMessage.error(error.response?.data?.detail || '启动系统失败')
   }
 }
 
 const handleStop = async () => {
   try {
     await systemStore.stopSystem()
-    ElMessage.success('System stop command sent')
+    ElMessage.success('系统停止命令已发送')
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || 'Failed to stop system')
+    ElMessage.error(error.response?.data?.detail || '停止系统失败')
   }
 }
 
@@ -433,7 +465,7 @@ const formatTime = (ts: string) => {
 
 <style scoped>
 .dashboard-container {
-  padding-bottom: 20px;
+  padding-bottom: 24px;
 }
 
 .header-actions {
@@ -443,39 +475,99 @@ const formatTime = (ts: string) => {
   margin-bottom: 20px;
 }
 
+.header-actions h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+}
+
 .controls {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 16px;
 }
 
 .status-cards {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+}
+
+.status-cards :deep(.el-card) {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  box-shadow: none;
+  border-radius: 2px;
+}
+
+.status-cards :deep(.el-card__header) {
+  background: #fafafa;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 12px 16px;
+}
+
+.status-cards :deep(.el-card__body) {
+  padding: 20px 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-header span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #606266;
 }
 
 .card-value {
-  font-size: 28px;
-  font-weight: bold;
-  text-align: center;
+  font-size: 32px;
+  font-weight: 600;
+  text-align: left;
   color: #303133;
+  display: flex;
+  align-items: baseline;
 }
 
 .unit {
   font-size: 14px;
   color: #909399;
   font-weight: normal;
+  margin-left: 6px;
 }
 
-.threat-high .card-value { color: #f56c6c; }
-.threat-medium .card-value { color: #e6a23c; }
-.threat-low .card-value { color: #67c23a; }
+.threat-high .card-value { color: #ff4d4f; }
+.threat-medium .card-value { color: #faad14; }
+.threat-low .card-value { color: #52c41a; }
 
 .charts-row {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+}
+
+.charts-row :deep(.el-card) {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  box-shadow: none;
+  border-radius: 2px;
+}
+
+.charts-row :deep(.el-card__header) {
+  background: #fafafa;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 12px 16px;
+}
+
+.charts-row :deep(.el-card__body) {
+  padding: 20px 16px;
+  background: #fafbfc;
 }
 
 .chart-container {
-  height: 350px;
+  height: 380px;
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 2px;
 }
 
 .chart {
@@ -484,52 +576,65 @@ const formatTime = (ts: string) => {
 }
 
 .alerts-list {
-  height: 350px;
+  height: 380px;
   overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 2px;
 }
 
 .no-alerts {
   text-align: center;
   color: #909399;
-  padding-top: 50px;
+  padding-top: 80px;
+  font-size: 14px;
 }
 
 .alert-item {
-  padding: 10px;
-  border-bottom: 1px solid #ebeef5;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  transition: background-color 0.2s;
+}
+
+.alert-item:hover {
+  background-color: #fafafa;
 }
 
 .alert-item:last-child {
   border-bottom: none;
 }
 
-.alert-item.critical { border-left: 4px solid #8b0000; background-color: #fef0f0; }
-.alert-item.high { border-left: 4px solid #f56c6c; background-color: #fef0f0; }
-.alert-item.medium { border-left: 4px solid #e6a23c; background-color: #fdf6ec; }
-.alert-item.low { border-left: 4px solid #67c23a; background-color: #f0f9eb; }
+.alert-item.critical { border-left: 3px solid #8b0000; }
+.alert-item.high { border-left: 3px solid #ff4d4f; }
+.alert-item.medium { border-left: 3px solid #faad14; }
+.alert-item.low { border-left: 3px solid #52c41a; }
 
 .alert-time {
   font-size: 12px;
   color: #909399;
-  width: 70px;
+  width: 75px;
+  flex-shrink: 0;
 }
 
 .alert-info {
   flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  margin-left: 12px;
 }
 
 .alert-type {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 14px;
+  color: #303133;
 }
 
 .alert-src {
-  font-size: 12px;
+  font-size: 13px;
   color: #606266;
 }
 

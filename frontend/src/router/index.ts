@@ -72,14 +72,28 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const systemStore = useSystemStore()
-  const isAuthenticated = systemStore.isAuthenticated
+  const hasToken = !!localStorage.getItem('token')
+
+  if (systemStore.isAuthenticated !== hasToken) {
+    systemStore.setAuthenticated(hasToken)
+  }
   
-  if (to.meta.requiresAuth && !isAuthenticated) {
+  if (to.meta.requiresAuth && !hasToken) {
     next('/login')
-  } else if (to.path === '/login' && isAuthenticated) {
+  } else if (to.path === '/login' && hasToken) {
     next('/')
   } else {
     next()
+  }
+})
+
+window.addEventListener('app:unauthorized', async () => {
+  const systemStore = useSystemStore()
+  systemStore.setAuthenticated(false)
+  systemStore.disconnectWebSocket()
+
+  if (router.currentRoute.value.path !== '/login') {
+    await router.replace('/login')
   }
 })
 

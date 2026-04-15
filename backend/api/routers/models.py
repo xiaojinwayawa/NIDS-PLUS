@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -21,6 +21,146 @@ router = APIRouter()
 # Store for async training tasks
 _training_tasks: dict = {}
 
+
+def _get_project_root() -> str:
+    current_file = os.path.abspath(__file__)
+    routers_dir = os.path.dirname(current_file)
+    api_dir = os.path.dirname(routers_dir)
+    backend_dir = os.path.dirname(api_dir)
+    return os.path.dirname(backend_dir)
+
+
+def _get_models_dir(project_root: str) -> str:
+    return os.path.join(project_root, "models")
+
+
+def _get_experiment_models_dir(project_root: str) -> str:
+    return os.path.join(project_root, "models", "experiments")
+
+
+def _get_experiment_results_dir(project_root: str) -> str:
+    return os.path.join(project_root, "data", "experiments")
+
+
+def _infer_model_type(model_name: str, meta_file: Optional[str] = None) -> str:
+    if meta_file and os.path.exists(meta_file):
+        try:
+            with open(meta_file, 'r') as f:
+                meta = json.load(f)
+                if meta.get("type"):
+                    return meta["type"]
+        except Exception as e:
+            logger.warning(f"Failed to load metadata for {model_name}: {e}")
+
+    lower_name = model_name.lower()
+    if "lightgbm" in lower_name:
+        return "lightgbm"
+    if "xgboost" in lower_name or "xgb" in lower_name:
+        return "xgboost"
+    if "cnn" in lower_name:
+        return "cnn"
+    if "gru" in lower_name:
+        return "gru"
+    if "transformer" in lower_name:
+        return "transformer"
+    return "unknown"
+
+
+def _build_model_name(base_dir: str, root: str, filename: str) -> str:
+    base_name = os.path.splitext(filename)[0]
+    rel_dir = os.path.relpath(root, base_dir)
+    if rel_dir == '.':
+        return base_name
+    return os.path.join(rel_dir, base_name).replace("\\", "/")
+
+
+def _resolve_experiment_model_path(project_root: str, experiment_id: str, model_type: str, stored_path: Optional[str] = None) -> Optional[str]:
+    candidate_paths = []
+
+    if stored_path:
+        if os.path.isabs(stored_path):
+            candidate_paths.append(stored_path)
+        else:
+            candidate_paths.append(os.path.join(project_root, stored_path))
+
+    for ext in [".joblib", ".keras", ".h5"]:
+        candidate_paths.append(os.path.join(project_root, "models", "experiments", experiment_id, f"{model_type}{ext}"))
+        # Legacy experiment runs stored models directly under models/<experiment_id>/
+        candidate_paths.append(os.path.join(project_root, "models", experiment_id, f"{model_type}{ext}"))
+
+    seen = set()
+    for path in candidate_paths:
+        if not path:
+            continue
+        normalized = os.path.normpath(path)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if os.path.exists(normalized):
+            return normalized
+
+    return candidate_paths[0] if candidate_paths else None
+
+
+def _build_experiment_model_entries(project_root: str, experiment_data: dict) -> List[dict]:
+    models_dir = _get_models_dir(project_root)
+    experiment_id = experiment_data.get("experiment_id")
+    experiment_name = experiment_data.get("config", {}).get("experiment_name", "Unnamed")
+    model_types = experiment_data.get("config", {}).get("model_types", [])
+    model_results = experiment_data.get("model_results", {})
+    model_paths = experiment_data.get("model_paths", {})
+    performance = experiment_data.get("performance")
+    timestamp = experiment_data.get("timestamp")
+
+    entries = []
+    for model_type in model_types:
+        resolved_path = None
+        if experiment_id:
+            resolved_path = _resolve_experiment_model_path(
+                project_root=project_root,
+                experiment_id=experiment_id,
+                model_type=model_type,
+                stored_path=model_paths.get(model_type)
+            )
+
+        model_name = None
+        if resolved_path:
+            try:
+                model_name = os.path.splitext(os.path.relpath(resolved_path, models_dir))[0].replace("\\", "/")
+            except ValueError:
+                model_name = os.path.splitext(os.path.basename(resolved_path))[0]
+
+        if not model_name and experiment_id:
+            model_name = f"experiments/{experiment_id}/{model_type}"
+
+        if not model_name:
+            continue
+
+        entries.append({
+            "id": f"exp_{experiment_id}_{model_type}",
+            "name": model_name,
+            "display_name": f"{experiment_name} - {model_type}",
+            "file": os.path.basename(resolved_path) if resolved_path else None,
+            "path": resolved_path,
+            "type": model_type,
+            "source": "experiment",
+            "group": "experiment",
+            "experiment_id": experiment_id,
+            "experiment_name": experiment_name,
+            "metrics": {
+                "accuracy": model_results.get(model_type, {}).get("accuracy"),
+                "precision": model_results.get(model_type, {}).get("precision"),
+                "recall": model_results.get(model_type, {}).get("recall"),
+                "f1": model_results.get(model_type, {}).get("f1"),
+                "fpr": model_results.get(model_type, {}).get("fpr"),
+                "fnr": model_results.get(model_type, {}).get("fnr")
+            },
+            "performance": performance,
+            "timestamp": timestamp
+        })
+
+    return entries
+
 # Request models
 class TrainRequest(BaseModel):
     model_type: str
@@ -39,74 +179,64 @@ def get_engine(request: Request) -> DetectionEngine:
 async def get_available_models(
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Get available model files from the models directory"""
-    # Get project root models directory
-    # __file__ is backend/api/routers/models.py
-    # Go up 3 levels: routers -> api -> backend -> project_root
-    current_file = os.path.abspath(__file__)
-    routers_dir = os.path.dirname(current_file)      # backend/api/routers
-    api_dir = os.path.dirname(routers_dir)           # backend/api
-    backend_dir = os.path.dirname(api_dir)           # backend
-    project_root = os.path.dirname(backend_dir)      # project_root
-    models_dir = os.path.join(project_root, "models")
-    
+    """Get available model files from the models directory and experiments"""
+    project_root = _get_project_root()
     available_models = []
     
-    if os.path.exists(models_dir):
-        for root, dirs, files in os.walk(models_dir):
+    # 1. Load normal models from project root models directory, excluding experiment output
+    root_models_dir = _get_models_dir(project_root)
+    experiment_models_dir = os.path.abspath(_get_experiment_models_dir(project_root))
+    if os.path.exists(root_models_dir):
+        for root, dirs, files in os.walk(root_models_dir):
+            dirs[:] = [
+                d for d in dirs
+                if os.path.abspath(os.path.join(root, d)) != experiment_models_dir
+            ]
             for filename in files:
                 if filename.endswith(('.joblib', '.h5', '.keras')):
-                    # Skip scaler files (ending with _scaler)
-                    base_name = os.path.splitext(filename)[0]
-                    if base_name.endswith('_scaler'):
+                    model_name = _build_model_name(root_models_dir, root, filename)
+                    if model_name.endswith('_scaler'):
                         continue
-                    
-                    # Determine model name relative to models_dir
-                    rel_dir = os.path.relpath(root, models_dir)
-                    
-                    if rel_dir == '.':
-                        model_name = base_name
-                    else:
-                        model_name = f"{rel_dir}/{base_name}"
-                    
+                    base_name = os.path.splitext(filename)[0]
                     meta_file = os.path.join(root, f"{base_name}_meta.json")
-                    
-                    # Determine type
-                    lower_name = model_name.lower()
-                    if "lightgbm" in lower_name:
-                        model_type = "lightgbm"
-                    elif "xgboost" in lower_name or "xgb" in lower_name:
-                        model_type = "xgboost"
-                    elif "cnn" in lower_name:
-                        model_type = "cnn"
-                    elif "gru" in lower_name:
-                        model_type = "gru"
-                    elif "transformer" in lower_name:
-                        model_type = "transformer"
-                    else:
-                        model_type = "unknown"
+                    model_type = _infer_model_type(model_name, meta_file)
                     
                     model_info = {
+                        "id": f"model_{len(available_models)}",
                         "name": model_name,
+                        "display_name": model_name,
                         "file": filename,
                         "path": os.path.join(root, filename),
-                        "type": model_type
+                        "type": model_type,
+                        "source": "models",
+                        "group": "single"
                     }
                     
-                    # Try to load metadata
                     if os.path.exists(meta_file):
                         try:
                             with open(meta_file, 'r') as f:
                                 meta = json.load(f)
-                                model_info["metadata"] = meta
-                        except:
-                            pass
+                                model_info["metrics"] = meta.get("metrics")
+                                model_info["timestamp"] = meta.get("timestamp")
+                        except Exception as e:
+                            logger.warning(f"Failed to load metadata for {model_name}: {e}")
                     
                     available_models.append(model_info)
     
+    # 2. Load models from experiment results
+    experiments_dir = _get_experiment_results_dir(project_root)
+    if os.path.exists(experiments_dir):
+        for filename in os.listdir(experiments_dir):
+            if filename.endswith('.json') and not filename.startswith('comparison') and not filename.startswith('export'):
+                try:
+                    with open(os.path.join(experiments_dir, filename), 'r') as f:
+                        data = json.load(f)
+                        available_models.extend(_build_experiment_model_entries(project_root, data))
+                except Exception as e:
+                    logger.error(f"Error reading experiment file {filename}: {e}")
+    
     return {
-        "models": available_models,
-        "directory": models_dir
+        "models": available_models
     }
 
 def get_engine(request: Request) -> DetectionEngine:
@@ -121,13 +251,9 @@ async def list_models(
     db_model_names = set()
     
     # 1. Get models from database (trained via frontend)
-    # Calculate project root for resolving paths
-    current_file = os.path.abspath(__file__)
-    routers_dir = os.path.dirname(current_file)
-    api_dir = os.path.dirname(routers_dir)
-    backend_dir = os.path.dirname(api_dir)
-    project_root = os.path.dirname(backend_dir)
-    models_dir = os.path.join(project_root, "models")
+    project_root = _get_project_root()
+    models_dir = _get_models_dir(project_root)
+    experiment_models_dir = os.path.abspath(_get_experiment_models_dir(project_root))
 
     models = db.query(ModelModel).order_by(ModelModel.created_at.desc()).all()
     for m in models:
@@ -154,7 +280,9 @@ async def list_models(
                 "accuracy": getattr(metric, "accuracy", None),
                 "precision": getattr(metric, "precision_score", None),
                 "recall": getattr(metric, "recall", None),
-                "f1": getattr(metric, "f1_score", None)
+                "f1": getattr(metric, "f1_score", None),
+                "fpr": getattr(metric, "false_positive_rate", None),
+                "fnr": getattr(metric, "false_negative_rate", None)
             } if metric else None
         }
         
@@ -187,40 +315,25 @@ async def list_models(
     preset_id = -1
     if os.path.exists(models_dir):
         for root, dirs, files in os.walk(models_dir):
+            dirs[:] = [
+                d for d in dirs
+                if os.path.abspath(os.path.join(root, d)) != experiment_models_dir
+            ]
             for filename in files:
                 if filename.endswith(('.joblib', '.h5', '.keras')):
                     # Skip scaler files (ending with _scaler)
-                    base_name = os.path.splitext(filename)[0]
-                    if base_name.endswith('_scaler'):
+                    model_name = _build_model_name(models_dir, root, filename)
+                    if model_name.endswith('_scaler'):
                         continue
-                    
-                    # Determine model name relative to models_dir to handle subdirectories
-                    rel_dir = os.path.relpath(root, models_dir)
-                    
-                    if rel_dir == '.':
-                        model_name = base_name
-                    else:
-                        # e.g. experiment_123/lightgbm
-                        model_name = f"{rel_dir}/{base_name}"
                     
                     # Skip if already in database
                     if model_name in db_model_names:
                         continue
                     
-                    # Determine type
-                    lower_name = model_name.lower()
-                    if "lightgbm" in lower_name:
-                        model_type = "lightgbm"
-                    elif "xgboost" in lower_name or "xgb" in lower_name:
-                        model_type = "xgboost"
-                    elif "cnn" in lower_name:
-                        model_type = "cnn"
-                    elif "gru" in lower_name:
-                        model_type = "gru"
-                    elif "transformer" in lower_name:
-                        model_type = "transformer"
-                    else:
-                        model_type = "unknown"
+                    # Try to load metadata first to get type
+                    base_name = os.path.splitext(filename)[0]
+                    meta_file = os.path.join(root, f"{base_name}_meta.json")
+                    model_type = _infer_model_type(model_name, meta_file)
                     
                     model_info = {
                         "id": preset_id,
@@ -236,8 +349,7 @@ async def list_models(
                         "metrics": None
                     }
                     
-                    # Try to load metadata (filename_meta.json)
-                    meta_file = os.path.join(root, f"{base_name}_meta.json")
+                    # Load remaining metadata
                     if os.path.exists(meta_file):
                         try:
                             with open(meta_file, 'r') as f:
@@ -245,8 +357,6 @@ async def list_models(
                                 model_info["metrics"] = meta.get("metrics")
                                 if meta.get("timestamp"):
                                     model_info["trained_at"] = datetime.fromtimestamp(meta["timestamp"]).isoformat()
-                                if meta.get("type"):
-                                    model_info["type"] = meta.get("type")
                         except:
                             pass
                     
@@ -403,6 +513,8 @@ async def train_model(
                     precision_score=metrics.get("precision"),
                     recall=metrics.get("recall"),
                     f1_score=metrics.get("f1"),
+                    false_positive_rate=metrics.get("fpr"),
+                    false_negative_rate=metrics.get("fnr"),
                     inference_time_ms=None
                 )
                 db_session.add(mm)
@@ -653,3 +765,214 @@ async def delete_model(
             raise HTTPException(status_code=500, detail=f"Failed to delete model file: {str(e)}")
         
         return {"message": "Preset model deleted successfully"}
+
+
+class UploadModelRequest(BaseModel):
+    model_name: str
+    model_type: str
+    dataset_type: Optional[str] = None
+
+
+@router.post("/upload")
+async def upload_model(
+    file: UploadFile = File(...),
+    model_name: str = None,
+    model_type: str = None,
+    dataset_type: str = None,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload an external model file (.joblib or .h5)
+    """
+    # Validate file type
+    filename = file.filename
+    if not filename.endswith(('.joblib', '.h5', '.keras')):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid file type. Only .joblib, .h5, .keras files are supported."
+        )
+    
+    # Determine model type if not provided
+    if not model_type:
+        lower_name = filename.lower()
+        if "lightgbm" in lower_name:
+            model_type = "lightgbm"
+        elif "xgboost" in lower_name or "xgb" in lower_name:
+            model_type = "xgboost"
+        elif "cnn" in lower_name:
+            model_type = "cnn"
+        elif "gru" in lower_name:
+            model_type = "gru"
+        elif "transformer" in lower_name:
+            model_type = "transformer"
+        else:
+            model_type = "unknown"
+    
+    # Generate model name if not provided
+    if not model_name:
+        base_name = os.path.splitext(filename)[0]
+        model_name = f"imported_{base_name}"
+    
+    # Get models directory
+    current_file = os.path.abspath(__file__)
+    routers_dir = os.path.dirname(current_file)
+    api_dir = os.path.dirname(routers_dir)
+    backend_dir = os.path.dirname(api_dir)
+    project_root = os.path.dirname(backend_dir)
+    models_dir = os.path.join(project_root, "models")
+    
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+    
+    # Save file
+    file_path = os.path.join(models_dir, filename)
+    counter = 1
+    while os.path.exists(file_path):
+        base, ext = os.path.splitext(filename)
+        file_path = os.path.join(models_dir, f"{base}_{counter}{ext}")
+        counter += 1
+    
+    # Write file
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Create database record
+    try:
+        model = ModelModel(
+            name=model_name,
+            type=model_type,
+            version="1.0",
+            file_path=os.path.relpath(file_path, project_root),
+            dataset_type=dataset_type,
+            is_active=False,
+            created_at=datetime.utcnow(),
+            trained_at=datetime.utcnow()
+        )
+        
+        db.add(model)
+        db.commit()
+        db.refresh(model)
+        
+        logger.info(f"Model uploaded successfully: {model_name} (ID: {model.id})")
+        
+        return {
+            "message": "Model uploaded successfully",
+            "model_id": model.id,
+            "model_name": model_name,
+            "model_type": model_type,
+            "file_path": file_path
+        }
+        
+    except Exception as e:
+        db.rollback()
+        # Clean up file if DB failed
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=f"Failed to save model to database: {str(e)}")
+
+
+@router.post("/import/{model_name}")
+async def import_local_model(
+    model_name: str,
+    model_type: str = None,
+    dataset_type: str = None,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Import an existing model from the local models directory
+    """
+    # Get models directory
+    current_file = os.path.abspath(__file__)
+    routers_dir = os.path.dirname(current_file)
+    api_dir = os.path.dirname(routers_dir)
+    backend_dir = os.path.dirname(api_dir)
+    project_root = os.path.dirname(backend_dir)
+    models_dir = os.path.join(project_root, "models")
+    
+    # Find the model file
+    model_file = None
+    model_file_path = None
+    
+    # Search for the model in models directory
+    if os.path.exists(models_dir):
+        for root, dirs, files in os.walk(models_dir):
+            for filename in files:
+                if filename.endswith(('.joblib', '.h5', '.keras')):
+                    base_name = os.path.splitext(filename)[0]
+                    if base_name.endswith('_scaler'):
+                        continue
+                    
+                    # Get relative model name
+                    rel_dir = os.path.relpath(root, models_dir)
+                    if rel_dir == '.':
+                        current_model_name = base_name
+                    else:
+                        current_model_name = f"{rel_dir}/{base_name}"
+                    
+                    if current_model_name == model_name:
+                        model_file = filename
+                        model_file_path = os.path.join(root, filename)
+                        break
+            if model_file:
+                break
+    
+    if not model_file or not model_file_path:
+        raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found in models directory")
+    
+    # Check if model already exists in database
+    existing = db.query(ModelModel).filter(ModelModel.name == model_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Model '{model_name}' already exists in database")
+    
+    # Determine model type if not provided
+    if not model_type:
+        lower_name = model_name.lower()
+        if "lightgbm" in lower_name:
+            model_type = "lightgbm"
+        elif "xgboost" in lower_name or "xgb" in lower_name:
+            model_type = "xgboost"
+        elif "cnn" in lower_name:
+            model_type = "cnn"
+        elif "gru" in lower_name:
+            model_type = "gru"
+        elif "transformer" in lower_name:
+            model_type = "transformer"
+        else:
+            model_type = "unknown"
+    
+    # Create database record
+    try:
+        model = ModelModel(
+            name=model_name,
+            type=model_type,
+            version="1.0",
+            file_path=os.path.relpath(model_file_path, project_root),
+            dataset_type=dataset_type,
+            is_active=False,
+            created_at=datetime.utcnow(),
+            trained_at=datetime.utcnow()
+        )
+        
+        db.add(model)
+        db.commit()
+        db.refresh(model)
+        
+        logger.info(f"Model imported successfully: {model_name} (ID: {model.id})")
+        
+        return {
+            "message": "Model imported successfully",
+            "model_id": model.id,
+            "model_name": model_name,
+            "model_type": model_type,
+            "file_path": model_file_path
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to save model to database: {str(e)}")

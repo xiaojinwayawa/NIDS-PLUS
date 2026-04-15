@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, Optional, List
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 from logging_config import app_logger as logger
@@ -492,6 +492,20 @@ class DeepLearningTrainer:
                 "final_loss": float(history.history['loss'][-1]),
                 "final_val_loss": float(history.history['val_loss'][-1])
             }
+            
+            # Calculate FPR and FNR for binary classification
+            if num_classes == 2:
+                cm = confusion_matrix(y_test, y_pred)
+                if cm.size == 4:
+                    tn, fp, fn, tp = cm.ravel()
+                    metrics["fpr"] = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
+                    metrics["fnr"] = float(fn / (fn + tp)) if (fn + tp) > 0 else 0.0
+                else:
+                    metrics["fpr"] = 0.0
+                    metrics["fnr"] = 0.0
+            else:
+                metrics["fpr"] = 0.0
+                metrics["fnr"] = 0.0
             
             logger.info(f"Training completed for {model_name}. Accuracy: {metrics['accuracy']:.4f}")
             

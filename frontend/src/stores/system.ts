@@ -30,6 +30,20 @@ export const useSystemStore = defineStore('system', () => {
   const user = ref<User | null>(null)
   const systemState = ref<'idle' | 'running' | 'stopped' | 'error'>('idle')
   
+  // System configuration (saved for resume)
+  const savedConfig = ref<{ mode: string; source?: string; models?: string[] } | null>(null)
+  
+  // Load saved config from localStorage on initialization
+  try {
+    const saved = localStorage.getItem('systemConfig')
+    if (saved) {
+      savedConfig.value = JSON.parse(saved)
+      console.log('Loaded saved system config:', savedConfig.value)
+    }
+  } catch (e) {
+    console.error('Failed to load system config from localStorage', e)
+  }
+  
   // Real-time data
   const trafficHistory = ref<TrafficStats[]>([])
   const recentAlerts = ref<Alert[]>([])
@@ -170,13 +184,32 @@ export const useSystemStore = defineStore('system', () => {
   }
   
   // System Control Actions
-  async function startSystem(mode: string = 'pcap', source?: string) {
+  async function startSystem(mode: string = 'pcap', source?: string, models?: string[]) {
     await api.post('/system/start', { mode, source })
+    // Save configuration for resume (both in memory and localStorage)
+    savedConfig.value = { mode, source, models }
+    localStorage.setItem('systemConfig', JSON.stringify(savedConfig.value))
+    console.log('Saved system config:', savedConfig.value)
     // State update usually comes via WS, but we can optimistically set it or wait
   }
   
   async function stopSystem() {
     await api.post('/system/stop')
+  }
+  
+  async function resumeSystem() {
+    // Resume with saved configuration
+    if (savedConfig.value) {
+      await startSystem(savedConfig.value.mode, savedConfig.value.source, savedConfig.value.models)
+      return true
+    }
+    return false
+  }
+  
+  function clearSavedConfig() {
+    savedConfig.value = null
+    localStorage.removeItem('systemConfig')
+    console.log('Cleared saved system config')
   }
   
   async function fetchSystemStatus() {
@@ -197,6 +230,7 @@ export const useSystemStore = defineStore('system', () => {
     isAuthenticated,
     user,
     systemState,
+    savedConfig,
     trafficHistory,
     recentAlerts,
     currentThroughput,
@@ -211,6 +245,8 @@ export const useSystemStore = defineStore('system', () => {
     disconnectWebSocket,
     startSystem,
     stopSystem,
+    resumeSystem,
+    clearSavedConfig,
     fetchSystemStatus
   }
 })

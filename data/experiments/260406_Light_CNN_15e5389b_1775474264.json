@@ -1,0 +1,80 @@
+{
+  "experiment_id": "260406_Light_CNN_15e5389b_1775474264",
+  "config": {
+    "experiment_name": "260406_Light_CNN",
+    "dataset_type": "cic-ids2017",
+    "model_types": [
+      "cnn",
+      "lightgbm"
+    ],
+    "random_seed": 42,
+    "test_size": 0.2,
+    "ml_num_boost_round": 100,
+    "ml_early_stopping": 10,
+    "dl_epochs": 50,
+    "dl_batch_size": 64,
+    "dl_learning_rate": 0.001,
+    "transformer_num_heads": 4,
+    "transformer_ff_dim": 128,
+    "transformer_num_blocks": 2,
+    "fusion_strategy": "weighted",
+    "use_focal_loss": true,
+    "use_class_weights": true,
+    "use_one_hot": true
+  },
+  "timestamp": "2026-04-06T19:38:49.691876",
+  "metrics": {
+    "accuracy": 0.9999778511151963,
+    "precision": 1.0,
+    "recall": 0.9999609451279047,
+    "f1_score": 0.9999804721826242,
+    "fpr": 0.0,
+    "fnr": 3.905487209529389e-05
+  },
+  "performance": {
+    "training_time_sec": 1261.269921541214,
+    "inference_time_ms": 0.0,
+    "throughput_samples_per_sec": 0
+  },
+  "model_results": {
+    "cnn": {
+      "accuracy": 0.9993576823406941,
+      "precision": 0.999726455646737,
+      "recall": 0.9991407928139036,
+      "f1": 0.9994335384314874,
+      "fpr": 0.00035816618911174784,
+      "fnr": 0.0008592071860964656
+    },
+    "lightgbm": {
+      "accuracy": 0.9999778511151963,
+      "precision": 1.0,
+      "recall": 0.9999609451279047,
+      "f1": 0.9999804721826242,
+      "fpr": 0.0,
+      "fnr": 3.905487209529389e-05
+    },
+    "fusion": {
+      "accuracy": 0.9999778511151963,
+      "precision": 1.0,
+      "recall": 0.9999609451279047,
+      "f1": 0.9999804721826242,
+      "fpr": 0.0,
+      "fnr": 3.905487209529389e-05
+    }
+  },
+  "model_paths": {
+    "cnn": "models/experiments/260406_Light_CNN_15e5389b_1775474264/cnn.keras",
+    "lightgbm": "models/experiments/260406_Light_CNN_15e5389b_1775474264/lightgbm.joblib",
+    "fusion": "models/experiments/260406_Light_CNN_15e5389b_1775474264/fusion.joblib"
+  },
+  "confusion_matrix": [
+    [
+      19544,
+      0
+    ],
+    [
+      1,
+      25604
+    ]
+  ]
+}

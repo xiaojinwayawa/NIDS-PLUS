@@ -184,7 +184,9 @@ class DetectionEngine:
             
             # Determine model type from name
             lower_name = self.current_model_name.lower()
-            if "xgb" in lower_name or "xgboost" in lower_name:
+            if "fusion" in lower_name:
+                self.current_model_type = "fusion"
+            elif "xgb" in lower_name or "xgboost" in lower_name:
                 self.current_model_type = "xgboost"
             elif "cnn" in lower_name:
                 self.current_model_type = "cnn"
@@ -210,7 +212,18 @@ class DetectionEngine:
                 model_key = f"{self.current_model_name}_latest"
                 if model_key in self.inference_engine.loaded_models:
                     model = self.inference_engine.loaded_models[model_key]
-                    self.shap_analyzer.initialize_explainer(model_key, model, self.current_model_type)
+                    if model == "FUSION_META_MODEL":
+                        # Fallback to the first sub-model for SHAP
+                        sub_keys = self.inference_engine.model_metadata[model_key].get("sub_model_keys", [])
+                        if sub_keys:
+                            shap_model_key = sub_keys[0]
+                            shap_model = self.inference_engine.loaded_models[shap_model_key]
+                            shap_model_type = self.inference_engine.model_metadata[shap_model_key]["type"]
+                            self.shap_analyzer.initialize_explainer(shap_model_key, shap_model, shap_model_type)
+                            self._current_shap_model_key = shap_model_key
+                    else:
+                        self.shap_analyzer.initialize_explainer(model_key, model, self.current_model_type)
+                        self._current_shap_model_key = model_key
 
             # 4. Start Capture
             if mode == "pcap":
@@ -468,10 +481,9 @@ class DetectionEngine:
                 
                 # Compute SHAP if enabled
                 shap_analysis = None
-                if settings.ENABLE_SHAP:
-                    model_key = f"{self.current_model_name}_latest"
+                if settings.ENABLE_SHAP and hasattr(self, '_current_shap_model_key'):
                     shap_res = self.shap_analyzer.compute_shap_values(
-                        model_key,
+                        self._current_shap_model_key,
                         X_batch[i:i+1],
                         self.flow_feature_extractor.get_feature_names()
                     )
@@ -567,10 +579,9 @@ class DetectionEngine:
                 }
                 
                 shap_analysis = None
-                if settings.ENABLE_SHAP:
-                    model_key = f"{self.current_model_name}_latest"
+                if settings.ENABLE_SHAP and hasattr(self, '_current_shap_model_key'):
                     shap_res = self.shap_analyzer.compute_shap_values(
-                        model_key,
+                        self._current_shap_model_key,
                         X_batch[i:i+1],
                         self.feature_extractor.get_feature_names()
                     )

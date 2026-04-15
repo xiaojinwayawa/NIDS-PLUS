@@ -2,8 +2,8 @@
   <div class="login-container">
     <div class="login-box">
       <div class="login-header">
-        <h1>NIDS System</h1>
-        <p>Network Intrusion Detection System</p>
+        <h1>NIDS 系统</h1>
+        <p>网络入侵检测系统</p>
       </div>
       
       <el-form 
@@ -14,19 +14,19 @@
         class="login-form"
         @keyup.enter="handleLogin"
       >
-        <el-form-item label="Username" prop="username">
+        <el-form-item label="用户名" prop="username">
           <el-input 
             v-model="loginForm.username" 
-            placeholder="Enter username"
+            placeholder="请输入用户名"
             :prefix-icon="User"
           />
         </el-form-item>
         
-        <el-form-item label="Password" prop="password">
+        <el-form-item label="密码" prop="password">
           <el-input 
             v-model="loginForm.password" 
             type="password" 
-            placeholder="Enter password"
+            placeholder="请输入密码"
             :prefix-icon="Lock"
             show-password
           />
@@ -39,13 +39,13 @@
             :loading="loading"
             @click="handleLogin"
           >
-            Login
+            登录
           </el-button>
         </el-form-item>
       </el-form>
       
       <div class="login-footer">
-        <p>Default: admin / admin123</p>
+        <p>默认账号: admin / admin123</p>
       </div>
     </div>
   </div>
@@ -70,8 +70,8 @@ const loginForm = reactive({
 })
 
 const rules = reactive<FormRules>({
-  username: [{ required: true, message: 'Please input username', trigger: 'blur' }],
-  password: [{ required: true, message: 'Please input password', trigger: 'blur' }]
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 })
 
 const handleLogin = async () => {
@@ -82,10 +82,10 @@ const handleLogin = async () => {
       loading.value = true
       try {
         await systemStore.login(loginForm.username, loginForm.password)
-        ElMessage.success('Login successful')
+        ElMessage.success('登录成功')
         router.push('/')
       } catch (error: any) {
-        ElMessage.error(error.response?.data?.detail || 'Login failed')
+        ElMessage.error(error.response?.data?.detail || '登录失败')
       } finally {
         loading.value = false
       }

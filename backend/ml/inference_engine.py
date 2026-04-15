@@ -112,6 +112,8 @@ class InferenceEngine:
                     model, model_path = self._load_ml_model(model_name, model_type)
                 elif model_type in ["cnn", "gru", "transformer"]:
                     model, model_path = self._load_dl_model(model_name, model_type)
+                elif model_type == "fusion":
+                    return self._load_fusion_model(model_name, version)
                 else:
                     logger.error(f"Unknown model type: {model_type}")
                     return False
@@ -204,7 +206,20 @@ class InferenceEngine:
         logger.info(f"Loading DL model {model_name} from {model_path}...")
         
         try:
-            model = tf.keras.models.load_model(model_path)
+            # Try to load custom objects if they exist
+            try:
+                from ml.experiment_runner import focal_loss_fixed
+                custom_objects = {'focal_loss_fixed': focal_loss_fixed}
+            except ImportError:
+                custom_objects = {}
+                
+            try:
+                # Keras 3.x way
+                model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
+            except Exception as e1:
+                logger.warning(f"Standard load failed, trying alternative: {e1}")
+                # Sometimes saving as .keras with custom functions requires safe_mode=False
+                model = tf.keras.models.load_model(model_path, custom_objects=custom_objects, safe_mode=False)
             
             # Load associated scaler if exists
             scaler_path = os.path.join(self.models_dir, f"{model_name}_scaler.joblib")
@@ -217,6 +232,85 @@ class InferenceEngine:
         except Exception as e:
             logger.error(f"Error loading DL model: {e}")
             return None, None
+
+    def _load_fusion_model(self, model_name: str, version: str) -> bool:
+        """Load a fusion model and its sub-models"""
+        import joblib
+        model_path = os.path.join(self.models_dir, f"{model_name}.joblib")
+        if not os.path.exists(model_path):
+            logger.error(f"Fusion model file not found: {model_path}")
+            return False
+            
+        try:
+            from ml.fusion_wrapper import FusionModelWrapper
+            fusion_model = joblib.load(model_path)
+            
+            if not isinstance(fusion_model, FusionModelWrapper):
+                logger.error("Loaded file is not a valid FusionModelWrapper")
+                return False
+                
+            logger.info(f"Loaded fusion model {model_name} with {len(fusion_model.sub_models)} sub-models")
+            
+            # Extract base directory from model name to find sub-models
+            # E.g. model_name="experiments/exp_123/fusion"
+            base_dir = os.path.dirname(model_name)
+            
+            # Load all sub-models
+            sub_model_keys = []
+            all_loaded = True
+            for sub_config in fusion_model.sub_models:
+                sub_type = sub_config["type"]
+                sub_name = sub_config["name"]
+                
+                # Construct the full path name relative to models_dir
+                if base_dir:
+                    full_sub_name = f"{base_dir}/{sub_name}"
+                else:
+                    # Look for sub models prefixed with the fusion model's name
+                    # When promoted, sub-models might be renamed to fusion_name_sub_type
+                    # We need a robust way to locate them.
+                    # Since we promote them together, let's assume they are stored like:
+                    # {model_name}_{sub_name} or {model_name}_{sub_type}
+                    full_sub_name = f"{model_name}_{sub_type}"
+                    # Fallback to just the type (if they were promoted identically)
+                    if not any(os.path.exists(os.path.join(self.models_dir, f"{full_sub_name}{ext}")) 
+                               for ext in [".joblib", ".keras", ".h5"]):
+                        full_sub_name = sub_type
+                        
+                success = self.load_model(full_sub_name, sub_type, version)
+                if success:
+                    sub_model_keys.append(f"{full_sub_name}_{version}")
+                else:
+                    logger.error(f"Failed to load sub-model {full_sub_name} for fusion model {model_name}")
+                    all_loaded = False
+                    
+            if not all_loaded:
+                return False
+                
+            # Register the fusion meta-model
+            model_key = f"{model_name}_{version}"
+            self.loaded_models[model_key] = "FUSION_META_MODEL"
+            self.model_metadata[model_key] = {
+                "name": model_name,
+                "type": "fusion",
+                "version": version,
+                "path": model_path,
+                "is_deep_learning": False,
+                "sub_model_keys": sub_model_keys,
+                "fusion_strategy": fusion_model.fusion_strategy
+            }
+            
+            # Apply the fusion strategy from the wrapper
+            self.set_fusion_strategy(
+                strategy=fusion_model.fusion_strategy,
+                weights=fusion_model.weights
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading fusion model: {e}", exc_info=True)
+            return False
 
     def unload_model(self, model_name: str, version: str = "latest"):
         """Unload a model to free memory"""
@@ -334,10 +428,16 @@ class InferenceEngine:
                 for key in self.loaded_models:
                     name = self.model_metadata[key]["name"]
                     if name in model_names:
-                        target_models.append(key)
-                return target_models
+                        # If it's a fusion model, return its sub_models instead
+                        if self.model_metadata[key]["type"] == "fusion":
+                            target_models.extend(self.model_metadata[key].get("sub_model_keys", []))
+                        else:
+                            target_models.append(key)
+                # Remove duplicates in case multiple fusion models share sub-models
+                return list(set(target_models))
             else:
-                return list(self.loaded_models.keys())
+                # If no names specified, return all non-fusion models
+                return [k for k, v in self.model_metadata.items() if v["type"] != "fusion"]
     
     def _predict_single_model(self, model_key: str, features: np.ndarray) -> Optional[np.ndarray]:
         """Run inference on a single model"""

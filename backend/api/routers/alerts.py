@@ -110,106 +110,75 @@ async def mark_false_positive(
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"message": "Alert marked as false positive"}
 
+@router.post("/{alert_id}/unmark_false_positive")
+async def unmark_false_positive(
+    alert_id: int,
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Unmark alert as false positive"""
+    success = engine.alert_engine.unmark_false_positive(alert_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found or not marked as false positive")
+    return {"message": "Alert unmarked as false positive and removed from continuous learning"}
 
-@router.post("/test/generate")
-async def generate_test_alerts(
-    count: int = Query(10, ge=1, le=100),
+
+@router.delete("/{alert_id}")
+async def delete_alert(
+    alert_id: int,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Generate test alerts for testing purposes"""
+    """Delete an alert"""
     from db.db_manager import SessionLocal
-    from db.models import AlertModel, ModelModel
-    from api.websocket_manager import manager as ws_manager
-    
-    attack_types = [
-        "DDoS", "Port Scan", "Brute Force", "SQL Injection", 
-        "XSS", "FTP-Patator", "SSH-Patator", "Bot", "Infiltration", "Heartbleed"
-    ]
-    protocols = ["TCP", "UDP", "ICMP", "HTTP", "HTTPS", "SSH", "FTP"]
+    from db.models import AlertModel
     
     db = SessionLocal()
-    created_alerts = []
-    ws_alerts = []
-    
     try:
-        # Get an existing model_id or use None
-        model = db.query(ModelModel).first()
-        model_id = model.id if model else None
+        alert = db.query(AlertModel).filter(AlertModel.id == alert_id).first()
+        if not alert:
+            raise HTTPException(status_code=404, detail="Alert not found")
         
-        for i in range(count):
-            # Generate random alert data (use current time for better testing)
-            alert = AlertModel(
-                timestamp=datetime.utcnow(),
-                src_ip=f"192.168.{random.randint(1, 255)}.{random.randint(1, 255)}",
-                dst_ip=f"10.0.{random.randint(1, 255)}.{random.randint(1, 255)}",
-                src_port=random.randint(1024, 65535),
-                dst_port=random.choice([22, 80, 443, 3306, 8080, 21, 23, 25]),
-                protocol=random.choice(protocols),
-                attack_type=random.choice(attack_types),
-                confidence=round(random.uniform(0.6, 0.99), 4),
-                model_id=model_id,
-                raw_features={
-                    "flow_duration": random.randint(1000, 100000),
-                    "total_fwd_packets": random.randint(1, 1000),
-                    "total_bwd_packets": random.randint(1, 500),
-                    "flow_bytes_per_s": random.uniform(100, 10000)
-                }
-            )
-            db.add(alert)
-            created_alerts.append({
-                "attack_type": alert.attack_type,
-                "src_ip": alert.src_ip,
-                "confidence": alert.confidence
-            })
-            ws_alerts.append(alert)
-        
+        db.delete(alert)
         db.commit()
         
-        # Broadcast alerts via WebSocket for Dashboard display
-        for alert in ws_alerts:
-            # Get severity based on confidence
-            confidence = alert.confidence
-            if confidence >= 0.9:
-                severity = "critical"
-            elif confidence >= 0.8:
-                severity = "high"
-            elif confidence >= 0.6:
-                severity = "medium"
-            else:
-                severity = "low"
-            
-            alert_msg = {
-                "type": "alert",
-                "data": {
-                    "id": alert.id,
-                    "timestamp": alert.timestamp.isoformat(),
-                    "src_ip": alert.src_ip,
-                    "dst_ip": alert.dst_ip,
-                    "protocol": alert.protocol or "TCP",
-                    "attack_type": alert.attack_type,
-                    "confidence": confidence,
-                    "severity": severity,
-                    "shap_analysis": None
-                }
-            }
-            await ws_manager.broadcast(alert_msg)
-        
-        return {
-            "message": f"Generated {count} test alerts",
-            "alerts": created_alerts
-        }
-        
+        return {"message": "Alert deleted successfully"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
-@router.delete("/test/clear")
-async def clear_test_alerts(
+class BatchDeleteRequest(BaseModel):
+    alert_ids: List[int]
+
+@router.post("/batch-delete")
+async def batch_delete_alerts(
+    req: BatchDeleteRequest,
     current_user: TokenData = Depends(get_current_user)
 ):
-    """Clear all alerts (for testing purposes)"""
+    """Batch delete alerts"""
+    from db.db_manager import SessionLocal
+    from db.models import AlertModel
+    
+    if not req.alert_ids:
+        return {"message": "No alerts to delete"}
+        
+    db = SessionLocal()
+    try:
+        deleted_count = db.query(AlertModel).filter(AlertModel.id.in_(req.alert_ids)).delete(synchronize_session=False)
+        db.commit()
+        return {"message": f"{deleted_count} alerts deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@router.delete("/clear-all")
+async def clear_all_alerts(
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Clear all alerts"""
     from db.db_manager import SessionLocal
     from db.models import AlertModel
     
@@ -217,15 +186,36 @@ async def clear_test_alerts(
     try:
         count = db.query(AlertModel).delete()
         db.commit()
-        return {"message": f"Deleted {count} alerts"}
+        return {"message": f"Successfully cleared {count} alerts"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
+@router.get("/false-positives/list", response_model=List[AlertOut])
+async def get_false_positive_alerts(
+    limit: int = Query(100, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Get all alerts marked as false positive"""
+    from db.db_manager import SessionLocal
+    from db.models import AlertModel
+    
+    db = SessionLocal()
+    try:
+        alerts = db.query(AlertModel)\
+            .filter(AlertModel.is_false_positive == True)\
+            .order_by(AlertModel.timestamp.desc())\
+            .offset(skip)\
+            .limit(limit)\
+            .all()
+        return alerts
+    finally:
+        db.close()
 
-# ============== FP Governance Endpoints ==============
 
 @router.get("/governance/rules")
 async def get_governance_rules(

@@ -49,3 +49,24 @@ async def get_log_content(
             return {"content": all_lines[-lines:]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{filename}")
+async def delete_log_file(
+    filename: str,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Delete a log file"""
+    file_path = LOGS_DIR / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Log file not found")
+        
+    # Basic path traversal protection
+    if not file_path.resolve().is_relative_to(LOGS_DIR.resolve()):
+         raise HTTPException(status_code=403, detail="Access denied")
+         
+    try:
+        file_path.unlink()
+        return {"message": f"Log file {filename} deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

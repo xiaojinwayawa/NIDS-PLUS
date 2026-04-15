@@ -1,21 +1,21 @@
 <template>
   <div class="traffic-container">
     <div class="header-actions">
-      <h1>Traffic Analysis</h1>
-      <el-select v-model="timeRange" placeholder="Select time range" @change="fetchData">
-        <el-option label="Last 1 Hour" value="1h" />
-        <el-option label="Last 24 Hours" value="24h" />
-        <el-option label="Last 7 Days" value="7d" />
+      <h1>流量分析</h1>
+      <el-select v-model="timeRange" placeholder="选择时间范围" @change="fetchData">
+        <el-option label="最近1小时" value="1h" />
+        <el-option label="最近24小时" value="24h" />
+        <el-option label="最近7天" value="7d" />
       </el-select>
     </div>
 
     <el-row :gutter="20" class="charts-row">
-      <!-- Protocol Distribution -->
+      <!-- 协议分布 -->
       <el-col :span="12">
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Protocol Distribution</span>
+              <span>协议分布</span>
             </div>
           </template>
           <div class="chart-container">
@@ -24,12 +24,12 @@
         </el-card>
       </el-col>
       
-      <!-- Port Activity Heatmap -->
+      <!-- 端口活动热力图 -->
       <el-col :span="12">
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Port Activity (Heatmap)</span>
+              <span>端口活动（热力图）</span>
             </div>
           </template>
           <div class="chart-container">
@@ -39,19 +39,19 @@
       </el-col>
     </el-row>
 
-    <!-- Top IPs Table -->
+    <!-- 热门IP表 -->
     <el-row>
       <el-col :span="24">
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
-              <span>Top Source IPs</span>
+              <span>热门源IP</span>
             </div>
           </template>
           <el-table :data="topIps" style="width: 100%" stripe>
-            <el-table-column prop="ip" label="IP Address" width="180" />
-            <el-table-column prop="country" label="Location" width="180" />
-            <el-table-column prop="count" label="Packet Count" sortable>
+            <el-table-column prop="ip" label="IP地址" width="180" />
+            <el-table-column prop="country" label="位置" width="180" />
+            <el-table-column prop="count" label="数据包数量" sortable>
               <template #default="scope">
                 <el-progress 
                   :percentage="Math.min(scope.row.count / maxCount * 100, 100)" 
@@ -202,26 +202,79 @@ const heatmapOption = computed(() => ({
 
 <style scoped>
 .traffic-container {
-  padding-bottom: 20px;
+  padding-bottom: 24px;
 }
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 15px;
   margin-bottom: 20px;
 }
 
+.header-actions h1 {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+
 .charts-row {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+}
+
+.traffic-container :deep(.el-card) {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  box-shadow: none;
+  border-radius: 2px;
+}
+
+.traffic-container :deep(.el-card__header) {
+  background: #fafafa;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 12px 16px;
+}
+
+.traffic-container :deep(.el-card__body) {
+  padding: 20px 16px;
+  background: #fafbfc;
+}
+
+.card-header span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #606266;
 }
 
 .chart-container {
   height: 400px;
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 2px;
 }
 
 .chart {
   height: 100%;
   width: 100%;
+}
+
+.traffic-container :deep(.el-table) {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  border-radius: 2px;
+}
+
+.traffic-container :deep(.el-table th) {
+  background: #fafafa;
+  color: #606266;
+  font-weight: 500;
+}
+
+.traffic-container :deep(.el-table--striped .el-table__body tr.el-table__row--striped td) {
+  background: #fafafa;
 }
 </style>
