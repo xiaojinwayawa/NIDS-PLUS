@@ -440,6 +440,16 @@ class DatasetPreprocessor:
         # Keep only numeric columns
         X = X.select_dtypes(include=[np.number])
         
+        # FEATURE SELECTION: Drop strong identifier features to prevent overfitting
+        identifier_cols = [
+            'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
+            'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1'
+        ]
+        for col in identifier_cols:
+            if col in X.columns:
+                X = X.drop(columns=[col])
+                logger.info(f"Dropped strong identifier feature: {col}")
+        
         # Handle missing values
         X = X.fillna(0)
         X = X.replace([np.inf, -np.inf], 0)

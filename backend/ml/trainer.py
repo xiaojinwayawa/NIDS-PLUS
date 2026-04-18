@@ -161,6 +161,16 @@ class TrainingManager:
             X = df.drop(columns=[target_col])
             y = df[target_col]
             
+            # FEATURE SELECTION: Drop strong identifier features to prevent overfitting
+            identifier_cols = [
+                'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
+                'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1'
+            ]
+            for col in identifier_cols:
+                if col in X.columns:
+                    X = X.drop(columns=[col])
+                    logger.info(f"Dropped strong identifier feature: {col}")
+            
             # Handle Label Encoding
             label_mapping = {}
             if y.dtype == 'object' or not pd.api.types.is_numeric_dtype(y):
@@ -240,6 +250,8 @@ class TrainingManager:
                 config.learning_rate = params["learning_rate"]
             if "random_seed" in params:
                 config.random_seed = params["random_seed"]
+            if "use_smote" in params:
+                config.use_smote = params["use_smote"]
         
         trainer = DeepLearningTrainer(self.models_dir, self.data_dir)
         return trainer.train_model(
@@ -284,6 +296,21 @@ class TrainingManager:
         # Stage 2: Split Data (15%)
         update_progress("preprocessing", 10, 100, "Splitting data...")
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # FEATURE ENGINEERING: SMOTE for class imbalance
+        if params and params.get('use_smote', False):
+            update_progress("preprocessing", 12, 100, "Applying SMOTE for class imbalance...")
+            try:
+                from imblearn.over_sampling import SMOTE
+                logger.info(f"Original class distribution: {np.bincount(y_train)}")
+                smote = SMOTE(random_state=42, n_jobs=-1)
+                X_train, y_train = smote.fit_resample(X_train, y_train)
+                logger.info(f"Resampled class distribution: {np.bincount(y_train)}")
+            except ImportError:
+                logger.warning("imbalanced-learn not installed. Skipping SMOTE.")
+            except Exception as e:
+                logger.warning(f"SMOTE failed: {e}. Proceeding with original data.")
+                
         update_progress("preprocessing", 15, 100, f"Train: {len(X_train)}, Test: {len(X_test)}")
         
         model = None

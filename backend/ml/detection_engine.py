@@ -162,7 +162,7 @@ class DetectionEngine:
             if self.use_flow_aggregation:
                 flow_config = FlowAggregatorConfig(
                     flow_timeout=120.0,        # Active timeout (for continuous attacks)
-                    idle_timeout=2.0,         # Idle timeout (for short attacks, triggers detection)10
+                    idle_timeout=10.0,         # Idle timeout (for short attacks, triggers detection)10
                     max_packets_per_flow=500,
                     enable_bidirectional=True,
                     tcp_flow_timeout=120.0,    # TCP flow timeout

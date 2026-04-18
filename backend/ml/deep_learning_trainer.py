@@ -57,6 +57,7 @@ class DeepLearningConfig:
                  epochs: int = 50,
                  early_stopping_patience: int = 5,
                  random_seed: int = 42,
+                 use_smote: bool = False,
                  # Transformer specific
                  num_heads: int = 4,
                  ff_dim: int = 128,
@@ -71,6 +72,7 @@ class DeepLearningConfig:
         self.epochs = epochs
         self.early_stopping_patience = early_stopping_patience
         self.random_seed = random_seed
+        self.use_smote = use_smote  # Feature Engineering: Add SMOTE support
         # Transformer specific
         self.num_heads = num_heads
         self.ff_dim = ff_dim
@@ -338,6 +340,16 @@ class DeepLearningTrainer:
         X = df.drop(columns=[target_col])
         y = df[target_col]
         
+        # FEATURE SELECTION: Drop strong identifier features to prevent overfitting
+        identifier_cols = [
+            'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
+            'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1'
+        ]
+        for col in identifier_cols:
+            if col in X.columns:
+                X = X.drop(columns=[col])
+                logger.info(f"Dropped strong identifier feature: {col}")
+        
         # Handle categorical features
         for col in X.select_dtypes(include=['object']).columns:
             X[col] = X[col].astype('category').cat.codes
@@ -420,6 +432,20 @@ class DeepLearningTrainer:
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=config.random_seed, stratify=y
             )
+            
+            # FEATURE ENGINEERING: SMOTE for class imbalance
+            if config.use_smote:
+                update_progress("preprocessing", 12, 100, "Applying SMOTE for class imbalance...")
+                try:
+                    from imblearn.over_sampling import SMOTE
+                    logger.info(f"Original class distribution: {np.bincount(y_train)}")
+                    smote = SMOTE(random_state=config.random_seed, n_jobs=-1)
+                    X_train, y_train = smote.fit_resample(X_train, y_train)
+                    logger.info(f"Resampled class distribution: {np.bincount(y_train)}")
+                except ImportError:
+                    logger.warning("imbalanced-learn not installed. Skipping SMOTE.")
+                except Exception as e:
+                    logger.warning(f"SMOTE failed: {e}. Proceeding with original data.")
             
             # Scale features
             X_train = self.scaler.fit_transform(X_train)
