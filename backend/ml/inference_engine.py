@@ -579,9 +579,22 @@ class InferenceEngine:
             
             # Map binary predictions to attack types
             attack_types = []
+            
+            # Try to get the real attack label from the primary model's metadata
+            real_attack_label = "Malicious"
+            if model_results:
+                primary_key = list(model_results.keys())[0]
+                if "label_mapping" in self.model_metadata.get(primary_key, {}):
+                    mapping = self.model_metadata[primary_key]["label_mapping"]
+                    # If it's a binary model mapping {0: BENIGN, 1: DDoS}, we extract the label for 1
+                    for k, v in mapping.items():
+                        if str(k) == "1" and str(v).lower() not in ["benign", "normal"]:
+                            real_attack_label = v
+                            break
+                            
             for p in preds:
                 if p == 1:
-                    attack_types.append("Malicious") # Generic label for binary models
+                    attack_types.append(real_attack_label) # Use the real label (e.g. DDoS) instead of generic Malicious
                 else:
                     attack_types.append("Normal")
                     

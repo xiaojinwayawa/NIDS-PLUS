@@ -162,13 +162,13 @@ class DetectionEngine:
             if self.use_flow_aggregation:
                 flow_config = FlowAggregatorConfig(
                     flow_timeout=120.0,        # Active timeout (for continuous attacks)
-                    idle_timeout=10.0,         # Idle timeout (for short attacks, triggers detection)
+                    idle_timeout=2.0,         # Idle timeout (for short attacks, triggers detection)10
                     max_packets_per_flow=500,
                     enable_bidirectional=True,
                     tcp_flow_timeout=120.0,    # TCP flow timeout
                     udp_flow_timeout=120.0,    # UDP flow timeout
                     icmp_flow_timeout=120.0,   # ICMP flow timeout
-                    fin_immediate_close=False  # Disable FIN immediate close temporarily
+                    fin_immediate_close=True  # Disable FIN immediate close temporarily  Fasle
                 )
                 self.flow_aggregator = FlowAggregator(flow_config)
                 self.flow_feature_extractor = FlowFeatureExtractor()
@@ -455,8 +455,8 @@ class DetectionEngine:
                 if model_attack_type and model_attack_type.lower() not in ["malicious", "malicious traffic", "normal", "benign", "0", "1"]:
                     attack_type = model_attack_type
                 else:
-                    # Binary classification - use generic label
-                    attack_type = "Malicious Traffic"
+                    # Binary classification - use generic label but try to avoid generic fallback if we have a better one
+                    attack_type = model_attack_type if model_attack_type not in ["1", "0", None] else "Malicious Traffic"
                 
                 # Create packet_info from flow for alert
                 pkt_info = {
@@ -493,7 +493,7 @@ class DetectionEngine:
                 alert = self.alert_engine.generate_alert(
                     pkt_info,
                     prediction_result,
-                    model_id=1
+                    model_id=None
                 )
                 
                 if alert:
@@ -569,7 +569,7 @@ class DetectionEngine:
                 if model_attack_type and model_attack_type.lower() not in ["malicious", "malicious traffic", "normal", "benign", "0", "1"]:
                     attack_type = model_attack_type
                 else:
-                    attack_type = "Malicious Traffic"
+                    attack_type = model_attack_type if model_attack_type not in ["1", "0", None] else "Malicious Traffic"
 
                 prediction_result = {
                     "is_attack": True,
@@ -591,7 +591,7 @@ class DetectionEngine:
                 alert = self.alert_engine.generate_alert(
                     pkt_info,
                     prediction_result,
-                    model_id=1
+                    model_id=None
                 )
                 
                 if alert:

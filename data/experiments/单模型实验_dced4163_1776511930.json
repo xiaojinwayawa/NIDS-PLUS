@@ -1,0 +1,63 @@
+{
+  "experiment_id": "\u5355\u6a21\u578b\u5b9e\u9a8c_dced4163_1776511930",
+  "config": {
+    "experiment_name": "\u5355\u6a21\u578b\u5b9e\u9a8c",
+    "dataset_type": "cic-ids2017",
+    "model_types": [
+      "lightgbm"
+    ],
+    "random_seed": 42,
+    "test_size": 0.2,
+    "ml_num_boost_round": 100,
+    "ml_early_stopping": 10,
+    "dl_epochs": 50,
+    "dl_batch_size": 64,
+    "dl_learning_rate": 0.001,
+    "transformer_num_heads": 4,
+    "transformer_ff_dim": 128,
+    "transformer_num_blocks": 2,
+    "fusion_strategy": "weighted",
+    "use_focal_loss": true,
+    "use_class_weights": true,
+    "use_one_hot": true,
+    "use_human_feedback": true,
+    "human_feedback_oversample_rate": 100
+  },
+  "timestamp": "2026-04-18T19:32:30.434225",
+  "metrics": {
+    "accuracy": 0.99991,
+    "precision": 0.9999055690644255,
+    "recall": 0.9998819641170916,
+    "f1_score": 0.9998937664514453,
+    "fpr": 6.939625260235948e-05,
+    "fnr": 0.00011803588290840416
+  },
+  "performance": {
+    "training_time_sec": 4.687823534011841,
+    "inference_time_ms": 1.6210079193115234,
+    "throughput_samples_per_sec": 61690013.23724077
+  },
+  "model_results": {
+    "lightgbm": {
+      "accuracy": 0.99991,
+      "precision": 0.9999055690644255,
+      "recall": 0.9998819641170916,
+      "f1": 0.9998937664514453,
+      "fpr": 6.939625260235948e-05,
+      "fnr": 0.00011803588290840416
+    }
+  },
+  "model_paths": {
+    "lightgbm": "models/experiments/\u5355\u6a21\u578b\u5b9e\u9a8c_dced4163_1776511930/lightgbm.joblib"
+  },
+  "confusion_matrix": [
+    [
+      57636,
+      4
+    ],
+    [
+      5,
+      42355
+    ]
+  ]
+}

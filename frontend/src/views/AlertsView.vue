@@ -342,7 +342,7 @@ const handleDeleteAll = async () => {
       type: 'error'
     })
     
-    const res = await api.delete('/alerts/clear-all')
+    const res = await api.post('/alerts/clear-all')
     ElMessage.success('已清空所有告警')
     
     selectedAlerts.value = []

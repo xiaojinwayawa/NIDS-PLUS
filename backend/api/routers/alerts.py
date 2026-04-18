@@ -126,7 +126,8 @@ async def unmark_false_positive(
 @router.delete("/{alert_id}")
 async def delete_alert(
     alert_id: int,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
 ):
     """Delete an alert"""
     from db.db_manager import SessionLocal
@@ -138,6 +139,10 @@ async def delete_alert(
         if not alert:
             raise HTTPException(status_code=404, detail="Alert not found")
         
+        # Protect Continuous Learning: If it's a False Positive, unmark it first to remove features
+        if alert.is_false_positive:
+            engine.alert_engine.unmark_false_positive(alert_id)
+            
         db.delete(alert)
         db.commit()
         
@@ -154,7 +159,8 @@ class BatchDeleteRequest(BaseModel):
 @router.post("/batch-delete")
 async def batch_delete_alerts(
     req: BatchDeleteRequest,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
 ):
     """Batch delete alerts"""
     from db.db_manager import SessionLocal
@@ -165,6 +171,16 @@ async def batch_delete_alerts(
         
     db = SessionLocal()
     try:
+        # Find all FP alerts in this batch and remove their features first
+        fp_alerts = db.query(AlertModel).filter(
+            AlertModel.id.in_(req.alert_ids),
+            AlertModel.is_false_positive == True
+        ).all()
+        
+        for fp in fp_alerts:
+            engine.alert_engine.unmark_false_positive(fp.id)
+            
+        # Bulk delete
         deleted_count = db.query(AlertModel).filter(AlertModel.id.in_(req.alert_ids)).delete(synchronize_session=False)
         db.commit()
         return {"message": f"{deleted_count} alerts deleted successfully"}
@@ -174,9 +190,10 @@ async def batch_delete_alerts(
     finally:
         db.close()
 
-@router.delete("/clear-all")
+@router.post("/clear-all")
 async def clear_all_alerts(
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
 ):
     """Clear all alerts"""
     from db.db_manager import SessionLocal
@@ -184,7 +201,13 @@ async def clear_all_alerts(
     
     db = SessionLocal()
     try:
-        count = db.query(AlertModel).delete()
+        # Find ALL FP alerts and remove their features first
+        fp_alerts = db.query(AlertModel).filter(AlertModel.is_false_positive == True).all()
+        for fp in fp_alerts:
+            engine.alert_engine.unmark_false_positive(fp.id)
+            
+        # Use bulk delete without loading instances
+        count = db.query(AlertModel).delete(synchronize_session=False)
         db.commit()
         return {"message": f"Successfully cleared {count} alerts"}
     except Exception as e:

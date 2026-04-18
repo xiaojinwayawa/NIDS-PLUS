@@ -1,0 +1,63 @@
+{
+  "experiment_id": "twokinds_ddos_016abe7b_1776519109",
+  "config": {
+    "experiment_name": "twokinds_ddos",
+    "dataset_type": "cic-ids2017",
+    "model_types": [
+      "lightgbm"
+    ],
+    "random_seed": 42,
+    "test_size": 0.2,
+    "ml_num_boost_round": 100,
+    "ml_early_stopping": 10,
+    "dl_epochs": 50,
+    "dl_batch_size": 64,
+    "dl_learning_rate": 0.001,
+    "transformer_num_heads": 4,
+    "transformer_ff_dim": 128,
+    "transformer_num_blocks": 2,
+    "fusion_strategy": "weighted",
+    "use_focal_loss": true,
+    "use_class_weights": true,
+    "use_one_hot": true,
+    "use_human_feedback": true,
+    "human_feedback_oversample_rate": 100
+  },
+  "timestamp": "2026-04-18T21:31:54.975692",
+  "metrics": {
+    "accuracy": 0.9999557022303927,
+    "precision": 0.9999609451279047,
+    "recall": 0.9999609451279047,
+    "f1_score": 0.9999609451279047,
+    "fpr": 5.116659844453541e-05,
+    "fnr": 3.905487209529389e-05
+  },
+  "performance": {
+    "training_time_sec": 1.6922497749328613,
+    "inference_time_ms": 0.0,
+    "throughput_samples_per_sec": 0
+  },
+  "model_results": {
+    "lightgbm": {
+      "accuracy": 0.9999557022303927,
+      "precision": 0.9999609451279047,
+      "recall": 0.9999609451279047,
+      "f1": 0.9999609451279047,
+      "fpr": 5.116659844453541e-05,
+      "fnr": 3.905487209529389e-05
+    }
+  },
+  "model_paths": {
+    "lightgbm": "models/experiments/twokinds_ddos_016abe7b_1776519109/lightgbm.joblib"
+  },
+  "confusion_matrix": [
+    [
+      19543,
+      1
+    ],
+    [
+      1,
+      25604
+    ]
+  ]
+}

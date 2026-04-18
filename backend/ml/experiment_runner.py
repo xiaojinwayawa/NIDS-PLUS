@@ -264,11 +264,7 @@ class DatasetPreprocessor:
             y = df['label'].values.astype(np.int32)
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Scale features
-        X_train = self.scaler.fit_transform(X_train)
-        X_test = self.scaler.transform(X_test)
-        
-        # Handle NaN and Inf
+        # Handle NaN and Inf (no scaling here, ML models use raw data, DL models will scale internally)
         X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
         X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -457,11 +453,7 @@ class DatasetPreprocessor:
             stratify=y
         )
         
-        # Scale
-        X_train = self.scaler.fit_transform(X_train)
-        X_test = self.scaler.transform(X_test)
-        
-        # Handle NaN and Inf after scaling
+        # Handle NaN and Inf after scaling (no scaling here, ML models use raw data, DL models will scale internally)
         X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
         X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -504,8 +496,9 @@ class DatasetPreprocessor:
             random_state=42
         )
         
-        X_train = self.scaler.fit_transform(X_train)
-        X_test = self.scaler.transform(X_test)
+        # Handle NaN and Inf
+        X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+        X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
         
         return X_train, X_test, y_train, y_test, label_mapping
 
@@ -797,6 +790,17 @@ class ExperimentRunner:
         np.random.seed(config.random_seed)
         
         start_time = time.time()
+
+        # DL models require feature scaling
+        from sklearn.preprocessing import StandardScaler
+        logger.info(f"Scaling features for {model_type} model...")
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        
+        # Use the scaled data for DL models
+        X_train = X_train_scaled
+        X_test = X_test_scaled
         input_dim = X_train.shape[1]
 
         # Force binary classification for experiments
@@ -923,8 +927,14 @@ class ExperimentRunner:
             try:
                 model.save(save_path)
                 logger.info(f"Saved {model_type} model to {save_path}")
+                
+                # Save the scaler for inference
+                scaler_path = save_path.replace('.keras', '_scaler.joblib')
+                import joblib
+                joblib.dump(scaler, scaler_path)
+                logger.info(f"Saved {model_type} scaler to {scaler_path}")
             except Exception as e:
-                logger.error(f"Failed to save {model_type} model: {e}")
+                logger.error(f"Failed to save {model_type} model/scaler: {e}")
         
         # Clear session to free memory
         keras.backend.clear_session()
