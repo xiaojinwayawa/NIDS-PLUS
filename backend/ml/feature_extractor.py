@@ -10,6 +10,18 @@ import joblib
 import os
 from logging_config import app_logger as logger
 
+
+WEB_SERVICE_PORTS = {80, 443, 8080, 8000, 8443}
+FTP_SERVICE_PORTS = {20, 21, 989, 990}
+SSH_SERVICE_PORTS = {22}
+DNS_SERVICE_PORTS = {53}
+MAIL_SERVICE_PORTS = {25, 110, 143, 465, 587, 993, 995}
+DATABASE_SERVICE_PORTS = {1433, 1521, 3306, 5432, 6379, 27017}
+
+
+
+
+
 class FeatureExtractor(abc.ABC):
     """Base class for feature extraction"""
     

@@ -32,6 +32,11 @@ class AlertOut(BaseModel):
     attack_type: str
     confidence: float
     is_false_positive: bool
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    repeat_count: int = 1
+    event_status: str = "active"
+    duration_seconds: int = 0
     
     class Config:
         from_attributes = True
@@ -47,6 +52,11 @@ class AlertDetailOut(BaseModel):
     attack_type: str
     confidence: float
     is_false_positive: bool
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    repeat_count: int = 1
+    event_status: str = "active"
+    duration_seconds: int = 0
     raw_features: Optional[dict] = None
     shap_analysis: Optional[dict] = None
     
@@ -62,6 +72,199 @@ async def get_alerts(
 ):
     """Get recent alerts"""
     return engine.alert_engine.get_alerts(limit=limit, skip=skip)
+
+from fastapi.responses import StreamingResponse
+import io
+import pandas as pd
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.piecharts import Pie
+import collections
+
+@router.get("/export-report")
+async def export_alerts_report(
+    format: str = Query("excel", description="Export format: excel or pdf"),
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Export alerts statistics report"""
+    try:
+        # 使用 detection engine 获取带事件化装饰的完整告警数据（和前端表格一致）
+        alerts = engine.alert_engine.get_alerts(limit=10000)
+        if not alerts:
+            raise HTTPException(status_code=404, detail="No alerts data available to export")
+            
+        # 统计数据
+        total_alerts = len(alerts)
+        attack_dist = collections.Counter([a.get("attack_type", "Unknown") for a in alerts])
+        src_ip_dist = collections.Counter([a.get("src_ip", "0.0.0.0") for a in alerts])
+        
+        if format.lower() in ["csv", "excel"]:
+            # CSV 无法直接插入图表，所以强制使用 Excel 引擎来生成带条形图的报表
+            df = pd.DataFrame([{
+                "ID": a["id"],
+                "Time": a["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if isinstance(a["timestamp"], datetime) else a["timestamp"],
+                "Source IP": a["src_ip"],
+                "Destination IP": a["dst_ip"],
+                "Protocol": a["protocol"],
+                "Attack Type": a["attack_type"],
+                "Repeat Count": a.get("repeat_count", 1),
+                "Last Seen": a["last_seen"].strftime("%Y-%m-%d %H:%M:%S") if isinstance(a.get("last_seen"), datetime) else a.get("last_seen", ""),
+                "Event Status": a.get("event_status", "active"),
+                "Confidence": f"{a['confidence']:.2f}",
+                "Is False Positive": a["is_false_positive"]
+            } for a in alerts])
+            
+            stream = io.BytesIO()
+            # 使用 xlsxwriter 引擎生成带彩色条形图的 Excel
+            with pd.ExcelWriter(stream, engine='xlsxwriter') as writer:
+                df.to_excel(writer, sheet_name='Alerts', index=False)
+                
+                workbook = writer.book
+                worksheet = writer.sheets['Alerts']
+                
+                # 调整列宽
+                worksheet.set_column('B:B', 20)
+                worksheet.set_column('C:D', 15)
+                worksheet.set_column('F:F', 20)
+                worksheet.set_column('H:H', 20)
+                
+                # 写入统计数据用于生成图表
+                summary_sheet = workbook.add_worksheet('Summary')
+                summary_sheet.write_row('A1', ['Attack Type', 'Count'])
+                row = 1
+                for k, v in attack_dist.most_common():
+                    summary_sheet.write_row(row, 0, [k, v])
+                    row += 1
+                    
+                # 创建彩色条形图 (Bar Chart)
+                chart = workbook.add_chart({'type': 'column'})
+                
+                # 给不同的柱子设置多种颜色
+                colors_list = ['#FF9900', '#3366CC', '#109618', '#990099', '#DC3912', '#3B3EAC', '#0099C6', '#DD4477', '#66AA00', '#B82E2E']
+                points = [{'fill': {'color': colors_list[i % len(colors_list)]}} for i in range(row - 1)]
+                
+                chart.add_series({
+                    'name': 'Attack Count',
+                    'categories': ['Summary', 1, 0, row - 1, 0],
+                    'values':     ['Summary', 1, 1, row - 1, 1],
+                    'points': points
+                })
+                chart.set_title({'name': 'Attack Type Distribution'})
+                chart.set_x_axis({'name': 'Attack Type'})
+                chart.set_y_axis({'name': 'Count'})
+                chart.set_legend({'none': True})
+                
+                # 将图表插入到主表
+                worksheet.insert_chart('M2', chart, {'x_scale': 1.2, 'y_scale': 1.2})
+                
+            stream.seek(0)
+            response = StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            response.headers["Content-Disposition"] = 'attachment; filename="alerts_report.xlsx"'
+            return response
+            
+        elif format.lower() == "pdf":
+            # 生成 PDF 并带上扇形饼图
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter)
+            elements = []
+            styles = getSampleStyleSheet()
+            
+            title_style = styles['Heading1']
+            title_style.alignment = 1 # Center
+            
+            elements.append(Paragraph("NIDS Security Alerts Report", title_style))
+            elements.append(Spacer(1, 12))
+            
+            elements.append(Paragraph(f"Total Alerts Detected: {total_alerts}", styles['Normal']))
+            elements.append(Spacer(1, 12))
+            
+            # 添加饼图 (Pie Chart)
+            elements.append(Paragraph("Attack Type Distribution Chart", styles['Heading2']))
+            elements.append(Spacer(1, 6))
+            
+            drawing = Drawing(400, 200)
+            pc = Pie()
+            pc.x = 100
+            pc.y = 20
+            pc.width = 150
+            pc.height = 150
+            
+            labels = []
+            data = []
+            # PDF 饼图只展示前 6 种最多的攻击，其他的归为 Others
+            common_attacks = attack_dist.most_common(6)
+            for k, v in common_attacks:
+                labels.append(f"{k} ({v})")
+                data.append(v)
+            
+            pc.data = data
+            pc.labels = labels
+            pc.slices.strokeWidth = 0.5
+            
+            color_palette = [colors.HexColor('#FF9900'), colors.HexColor('#3366CC'), colors.HexColor('#109618'), 
+                             colors.HexColor('#990099'), colors.HexColor('#DC3912'), colors.HexColor('#3B3EAC')]
+            for i, col in enumerate(color_palette):
+                if i < len(pc.data):
+                    pc.slices[i].fillColor = col
+                    
+            drawing.add(pc)
+            elements.append(drawing)
+            elements.append(Spacer(1, 20))
+            
+            # 攻击分布表格
+            elements.append(Paragraph("Attack Type Details", styles['Heading2']))
+            data_table = [["Attack Type", "Count"]]
+            for k, v in attack_dist.most_common():
+                data_table.append([str(k), str(v)])
+                
+            t = Table(data_table, colWidths=[200, 100])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            elements.append(t)
+            elements.append(Spacer(1, 20))
+            
+            # Top IP 表格
+            elements.append(Paragraph("Top 10 Source IPs", styles['Heading2']))
+            ip_data = [["Source IP", "Count"]]
+            for k, v in src_ip_dist.most_common(10):
+                ip_data.append([str(k), str(v)])
+            t_ip = Table(ip_data, colWidths=[200, 100])
+            t_ip.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            elements.append(t_ip)
+            
+            doc.build(elements)
+            buffer.seek(0)
+            
+            response = StreamingResponse(buffer, media_type="application/pdf")
+            response.headers["Content-Disposition"] = 'attachment; filename="alerts_report.pdf"'
+            return response
+            
+        else:
+            raise HTTPException(status_code=400, detail="Invalid format. Use 'excel' or 'pdf'")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{alert_id}", response_model=AlertDetailOut)
 async def get_alert_detail(
@@ -81,6 +284,7 @@ async def get_alert_detail(
         shap_analysis = None
         if rec.raw_features and isinstance(rec.raw_features, dict):
             shap_analysis = rec.raw_features.get("shap_analysis")
+        decorated = engine.alert_engine._decorate_alert_dict(rec)
         return AlertDetailOut(
             id=rec.id,
             timestamp=rec.timestamp,
@@ -92,6 +296,11 @@ async def get_alert_detail(
             attack_type=rec.attack_type,
             confidence=rec.confidence,
             is_false_positive=rec.is_false_positive,
+            first_seen=decorated.get("first_seen"),
+            last_seen=decorated.get("last_seen"),
+            repeat_count=decorated.get("repeat_count", 1),
+            event_status=decorated.get("event_status", "active"),
+            duration_seconds=decorated.get("duration_seconds", 0),
             raw_features=rec.raw_features,
             shap_analysis=shap_analysis
         )
@@ -183,7 +392,7 @@ async def batch_delete_alerts(
         # Bulk delete
         deleted_count = db.query(AlertModel).filter(AlertModel.id.in_(req.alert_ids)).delete(synchronize_session=False)
         db.commit()
-        return {"message": f"{deleted_count} alerts deleted successfully"}
+        return {"message": f"Deleted {deleted_count} alerts"}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -235,7 +444,7 @@ async def get_false_positive_alerts(
             .offset(skip)\
             .limit(limit)\
             .all()
-        return alerts
+        return [engine.alert_engine._decorate_alert_dict(alert) for alert in alerts]
     finally:
         db.close()
 

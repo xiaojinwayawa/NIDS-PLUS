@@ -16,6 +16,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 from logging_config import app_logger as logger
 
+
 # Get project root directory
 _current_file = os.path.abspath(__file__)
 _ml_dir = os.path.dirname(_current_file)
@@ -47,7 +48,7 @@ def clear_dl_training_progress(task_id: str):
 class DeepLearningConfig:
     """Configuration for deep learning models"""
     def __init__(self,
-                 model_type: str = "cnn",  # 'cnn', 'gru', or 'transformer'
+                 model_type: str = "cnn",  # 'cnn', 'cnn_resattn', 'gru', or 'transformer'
                  input_dim: int = 78,       # Number of input features
                  sequence_length: int = 1,  # For sequence models
                  hidden_units: List[int] = None,
@@ -90,6 +91,7 @@ class DeepLearningTrainer:
         self.data_dir = data_dir or _default_data_dir
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
+        self._last_label_mapping: Dict[int, str] = {}
         
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir)
@@ -155,6 +157,68 @@ class DeepLearningTrainer:
                 metrics=['accuracy']
             )
         
+        return model
+
+    def _build_cnn_resattn_model(self, config: DeepLearningConfig, num_classes: int):
+        """Build an enhanced 1D-CNN with two conv layers, residual path, and attention"""
+        import tensorflow as tf
+        from tensorflow import keras
+        from tensorflow.keras import layers
+
+        tf.random.set_seed(config.random_seed)
+        np.random.seed(config.random_seed)
+
+        inputs = layers.Input(shape=(config.input_dim,))
+        x = layers.Reshape((config.input_dim, 1))(inputs)
+
+        x = layers.Conv1D(filters=64, kernel_size=3, activation='relu', padding='same')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Dropout(config.dropout_rate / 2)(x)
+
+        residual = layers.Conv1D(filters=128, kernel_size=1, padding='same')(x)
+        residual = layers.BatchNormalization()(residual)
+
+        x = layers.Conv1D(filters=128, kernel_size=3, activation='relu', padding='same')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Conv1D(filters=128, kernel_size=3, activation='relu', padding='same')(x)
+        x = layers.BatchNormalization()(x)
+
+        x = layers.Add()([x, residual])
+        x = layers.Activation('relu')(x)
+
+        attention_scores = layers.Dense(1, activation='tanh')(x)
+        attention_scores = layers.Softmax(axis=1, name='temporal_attention')(attention_scores)
+        x = layers.Multiply()([x, attention_scores])
+
+        x = layers.GlobalAveragePooling1D()(x)
+        x = layers.Dropout(config.dropout_rate)(x)
+        x = layers.Dense(config.hidden_units[0], activation='relu')(x)
+        x = layers.Dropout(config.dropout_rate)(x)
+        x = layers.Dense(config.hidden_units[1], activation='relu')(x)
+        x = layers.Dropout(config.dropout_rate / 2)(x)
+
+        outputs = layers.Dense(
+            1 if num_classes == 2 else num_classes,
+            activation='sigmoid' if num_classes == 2 else 'softmax'
+        )(x)
+
+        model = keras.Model(inputs=inputs, outputs=outputs, name="cnn_resattn")
+
+        optimizer = keras.optimizers.Adam(learning_rate=config.learning_rate)
+
+        if num_classes == 2:
+            model.compile(
+                optimizer=optimizer,
+                loss='binary_crossentropy',
+                metrics=['accuracy']
+            )
+        else:
+            model.compile(
+                optimizer=optimizer,
+                loss='sparse_categorical_crossentropy',
+                metrics=['accuracy']
+            )
+
         return model
     
     def _build_gru_model(self, config: DeepLearningConfig, num_classes: int):
@@ -341,14 +405,12 @@ class DeepLearningTrainer:
         y = df[target_col]
         
         # FEATURE SELECTION: Drop strong identifier features to prevent overfitting
-        identifier_cols = [
-            'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
-            'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1'
-        ]
-        for col in identifier_cols:
+        # Note: 'Destination Port' is NO LONGER dropped. We keep all 78 features.
+        drop_cols = ['Source IP', 'Source Port', 'Destination IP', 'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1']
+        
+        for col in drop_cols:
             if col in X.columns:
                 X = X.drop(columns=[col])
-                logger.info(f"Dropped strong identifier feature: {col}")
         
         # Handle categorical features
         for col in X.select_dtypes(include=['object']).columns:
@@ -363,8 +425,15 @@ class DeepLearningTrainer:
         # Encode target
         if y.dtype == 'object':
             y = self.label_encoder.fit_transform(y)
+            self._last_label_mapping = {
+                int(i): str(label) for i, label in enumerate(self.label_encoder.classes_)
+            }
         else:
             y = y.values
+            unique_labels = sorted(np.unique(y))
+            self._last_label_mapping = {
+                int(label): str(label) for label in unique_labels
+            }
         
         # Convert to binary if needed (normal=0, attack=1)
         unique_labels = np.unique(y)
@@ -384,7 +453,7 @@ class DeepLearningTrainer:
         Train a deep learning model.
         
         Args:
-            model_type: 'cnn', 'gru', or 'transformer'
+            model_type: 'cnn', 'cnn_resattn', 'gru', or 'transformer'
             dataset_path: Path to training data
             config: Model configuration
             model_name: Name for saving
@@ -460,12 +529,17 @@ class DeepLearningTrainer:
             
             if model_type.lower() == "cnn":
                 model = self._build_cnn_model(config, num_classes)
+            elif model_type.lower() == "cnn_resattn":
+                model = self._build_cnn_resattn_model(config, num_classes)
             elif model_type.lower() == "gru":
                 model = self._build_gru_model(config, num_classes)
             elif model_type.lower() == "transformer":
                 model = self._build_transformer_model(config, num_classes)
             else:
-                raise ValueError(f"Unsupported model type: {model_type}. Supported: cnn, gru, transformer")
+                raise ValueError(
+                    f"Unsupported model type: {model_type}. "
+                    "Supported: cnn, cnn_resattn, gru, transformer"
+                )
             
             update_progress("building", 20, 100, "Model built successfully")
             
@@ -549,13 +623,20 @@ class DeepLearningTrainer:
             
             # Save metadata
             meta_path = os.path.join(self.models_dir, f"{model_name}_meta.json")
+            label_mapping = self._last_label_mapping or {
+                int(i): str(i) for i in sorted(np.unique(y))
+            }
             metadata = {
                 "name": model_name,
                 "type": model_type,
                 "framework": "tensorflow",
                 "input_dim": config.input_dim,
                 "num_classes": num_classes,
+                "label_mapping": label_mapping,
                 "config": {
+                    "architecture_variant": (
+                        "cnn_resattn" if model_type == "cnn_resattn" else model_type
+                    ),
                     "hidden_units": config.hidden_units,
                     "dropout_rate": config.dropout_rate,
                     "learning_rate": config.learning_rate,
@@ -701,6 +782,19 @@ class SequenceModelTrainer:
         
         # Get dimensions
         num_samples, sequence_length, feature_dim = X_sequences.shape
+        label_mapping: Dict[int, str] = {}
+
+        if y_labels.dtype.kind in {"U", "S", "O"}:
+            y_labels = self.label_encoder.fit_transform(y_labels)
+            label_mapping = {
+                int(i): str(label) for i, label in enumerate(self.label_encoder.classes_)
+            }
+        else:
+            unique_labels = sorted(np.unique(y_labels))
+            label_mapping = {
+                int(label): str(label) for label in unique_labels
+            }
+
         num_classes = len(np.unique(y_labels))
         
         # Split data
@@ -757,6 +851,7 @@ class SequenceModelTrainer:
                 "sequence_length": sequence_length,
                 "feature_dim": feature_dim,
                 "num_classes": num_classes,
+                "label_mapping": label_mapping,
                 "metrics": metrics,
                 "timestamp": time.time()
             }, f, indent=4)

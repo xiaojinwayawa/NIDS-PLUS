@@ -19,6 +19,7 @@ import xgboost as xgb
 from config import settings
 from logging_config import app_logger as logger
 
+
 # Get project root directory
 _current_file = os.path.abspath(__file__)
 _ml_dir = os.path.dirname(_current_file)         # backend/ml
@@ -161,12 +162,12 @@ class TrainingManager:
             X = df.drop(columns=[target_col])
             y = df[target_col]
             
-            # FEATURE SELECTION: Drop strong identifier features to prevent overfitting
-            identifier_cols = [
-                'Source IP', 'Source Port', 'Destination IP', 'Destination Port',
+            # Note: 'Destination Port' is NO LONGER dropped. We keep all 78 features.
+            drop_cols = [
+                'Source IP', 'Source Port', 'Destination IP',
                 'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1'
             ]
-            for col in identifier_cols:
+            for col in drop_cols:
                 if col in X.columns:
                     X = X.drop(columns=[col])
                     logger.info(f"Dropped strong identifier feature: {col}")
@@ -210,7 +211,7 @@ class TrainingManager:
         Train a new model.
         
         Args:
-            model_type: 'lightgbm', 'xgboost', 'cnn', 'gru', or 'transformer'
+            model_type: 'lightgbm', 'xgboost', 'cnn', 'cnn_resattn', 'gru', or 'transformer'
             dataset_path: Path to CSV data
             params: Hyperparameters
             model_name: Name for saving
@@ -220,7 +221,7 @@ class TrainingManager:
             Dictionary with training metrics
         """
         # Route to appropriate trainer
-        if model_type in ["cnn", "gru", "transformer"]:
+        if model_type in ["cnn", "cnn_resattn", "gru", "transformer"]:
             return self._train_deep_learning_model(
                 model_type, dataset_path_or_paths, params, model_name, task_id, epochs
             )
@@ -318,21 +319,21 @@ class TrainingManager:
         try:
             if model_type == "lightgbm":
                 if params is None:
-                    if num_classes > 2:
-                        params = {
-                            'objective': 'multiclass', 
-                            'num_class': num_classes, 
-                            'metric': 'multi_logloss',
-                            'verbosity': -1
-                        }
-                    else:
-                        params = {'objective': 'binary', 'verbosity': -1}
+                    params = {}
+                
+                # Ensure correct objective and num_class
+                if num_classes > 2:
+                    params['objective'] = 'multiclass'
+                    params['num_class'] = num_classes
+                    if 'metric' not in params:
+                        params['metric'] = 'multi_logloss'
                 else:
-                    # Auto-adjust if needed
-                    if num_classes > 2 and params.get('objective') == 'binary':
-                         params['objective'] = 'multiclass'
-                         params['num_class'] = num_classes
-                         params['metric'] = 'multi_logloss'
+                    if params.get('objective') != 'binary':
+                        params['objective'] = 'binary'
+                    if 'metric' not in params:
+                        params['metric'] = 'binary_logloss'
+                
+                params['verbosity'] = -1
                 
                 # Convert to Dataset
                 train_data = lgb.Dataset(X_train, label=y_train)
@@ -368,20 +369,20 @@ class TrainingManager:
                 
             elif model_type == "xgboost":
                 if params is None:
-                    if num_classes > 2:
-                        params = {
-                            'objective': 'multi:softmax', 
-                            'num_class': num_classes,
-                            'eval_metric': 'mlogloss'
-                        }
-                    else:
-                        params = {'objective': 'binary:logistic', 'eval_metric': 'logloss'}
+                    params = {}
+                
+                # Ensure correct objective and num_class
+                if num_classes > 2:
+                    params['objective'] = 'multi:softmax'
+                    params['num_class'] = num_classes
+                    if 'eval_metric' not in params:
+                        params['eval_metric'] = 'mlogloss'
                 else:
-                    if num_classes > 2 and 'binary' in params.get('objective', ''):
-                         params['objective'] = 'multi:softmax'
-                         params['num_class'] = num_classes
-                         params['eval_metric'] = 'mlogloss'
-                    
+                    if params.get('objective') != 'binary:logistic':
+                        params['objective'] = 'binary:logistic'
+                    if 'eval_metric' not in params:
+                        params['eval_metric'] = 'logloss'
+                
                 dtrain = xgb.DMatrix(X_train, label=y_train)
                 dtest = xgb.DMatrix(X_test, label=y_test)
                 

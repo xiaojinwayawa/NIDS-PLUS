@@ -36,7 +36,7 @@ class InferenceEngine:
     
     Model types supported:
     - Traditional ML: lightgbm, xgboost
-    - Deep Learning: cnn, gru (TensorFlow/Keras)
+    - Deep Learning: cnn, cnn_resattn, gru (TensorFlow/Keras)
     """
 
     def __init__(self, models_dir: str = None):
@@ -90,7 +90,7 @@ class InferenceEngine:
         
         Args:
             model_name: Name of the model
-            model_type: Type (lightgbm, xgboost, cnn, gru)
+            model_type: Type (lightgbm, xgboost, cnn, cnn_resattn, gru)
             version: Model version
             
         Returns:
@@ -110,7 +110,7 @@ class InferenceEngine:
                 # Handle different model types
                 if model_type in ["lightgbm", "xgboost"]:
                     model, model_path = self._load_ml_model(model_name, model_type)
-                elif model_type in ["cnn", "gru", "transformer"]:
+                elif model_type in ["cnn", "cnn_resattn", "gru", "transformer"]:
                     model, model_path = self._load_dl_model(model_name, model_type)
                 elif model_type == "fusion":
                     return self._load_fusion_model(model_name, version)
@@ -127,7 +127,7 @@ class InferenceEngine:
                         "type": model_type,
                         "version": version,
                         "path": model_path,
-                        "is_deep_learning": model_type in ["cnn", "gru", "transformer"]
+                        "is_deep_learning": model_type in ["cnn", "cnn_resattn", "gru", "transformer"]
                     }
                     
                     # Check for _meta.json file
@@ -493,7 +493,7 @@ class InferenceEngine:
                     dtest = xgb.DMatrix(features)
                 probs = model.predict(dtest)
                 
-        elif model_type in ["cnn", "gru", "transformer"]:
+        elif model_type in ["cnn", "cnn_resattn", "gru", "transformer"]:
             # Deep learning model
             probs = self._predict_dl_model(model, model_name, features)
         
@@ -554,12 +554,26 @@ class InferenceEngine:
             attack_types = []
             predictions = []
             
-            for idx in class_indices:
+            for idx, conf in zip(class_indices, confidences):
                 label = label_mapping.get(idx, str(idx))
+                
+                is_benign = label.lower() in ["benign", "normal", "0"]
+                
+                # [末端兜底] 缓解多分类 argmax 强制归类效应
+                # 如果模型判断为攻击，但置信度低于阈值，则强制降级为正常流量 (避免背景噪声引发强告警)
+                if not is_benign and conf < settings.MULTICLASS_CONFIDENCE_THRESHOLD:
+                    logger.debug(
+                        f"Confidence buffer triggered: Overriding {label} "
+                        f"(conf: {conf:.4f}, threshold: {settings.MULTICLASS_CONFIDENCE_THRESHOLD:.4f}) "
+                        f"to Normal"
+                    )
+                    label = "Normal"
+                    is_benign = True
+                    
                 attack_types.append(label)
                 
                 # Determine binary prediction (Normal/Benign = 0, others = 1)
-                if label.lower() in ["benign", "normal", "0"]:
+                if is_benign:
                     predictions.append(0)
                 else:
                     predictions.append(1)

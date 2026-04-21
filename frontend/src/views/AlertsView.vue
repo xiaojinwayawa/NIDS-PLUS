@@ -11,6 +11,18 @@
         </el-select>
         <el-button type="primary" :loading="alertsLoading || governanceLoading" @click="refreshCurrentTab">刷新</el-button>
         
+        <el-dropdown @command="handleExportReport" style="margin-left: 10px; margin-right: 10px;">
+          <el-button type="success">
+            下载报表<el-icon class="el-icon--right"><arrow-down /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="excel">导出 Excel 报表 (带条形图)</el-dropdown-item>
+              <el-dropdown-item command="pdf">导出 PDF 报告 (带饼图)</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
         <el-button type="danger" :disabled="selectedAlerts.length === 0" @click="handleBatchDelete">删除选中 ({{ selectedAlerts.length }})</el-button>
         <el-button type="danger" plain @click="handleDeleteAll">全部清空</el-button>
       </div>
@@ -49,6 +61,19 @@
         <el-table-column label="攻击类型" min-width="140">
           <template #default="scope">
             {{ cleanAttackType(scope.row.attack_type) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="repeat_count" label="次数" width="80" />
+        <el-table-column label="最后出现" min-width="170">
+          <template #default="scope">
+            {{ formatTime(scope.row.last_seen || scope.row.timestamp) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" min-width="90">
+          <template #default="scope">
+            <el-tag :type="scope.row.event_status === 'resolved' ? 'info' : 'danger'">
+              {{ scope.row.event_status === 'resolved' ? '已结束' : '持续中' }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="confidence" label="置信度" min-width="110">
@@ -106,6 +131,12 @@
             <el-table-column label="攻击类型" min-width="140">
               <template #default="scope">
                 {{ cleanAttackType(scope.row.attack_type) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="repeat_count" label="次数" width="80" />
+            <el-table-column label="最后出现" min-width="170">
+              <template #default="scope">
+                {{ formatTime(scope.row.last_seen || scope.row.timestamp) }}
               </template>
             </el-table-column>
             <el-table-column prop="confidence" label="置信度" min-width="110">
@@ -214,6 +245,10 @@
           <el-descriptions-item label="协议">{{ alertDetail.protocol }}</el-descriptions-item>
           <el-descriptions-item label="攻击">{{ cleanAttackType(alertDetail.attack_type) }}</el-descriptions-item>
           <el-descriptions-item label="置信度">{{ alertDetail.confidence.toFixed(2) }}</el-descriptions-item>
+          <el-descriptions-item label="首次发现">{{ formatTime(alertDetail.first_seen || alertDetail.timestamp) }}</el-descriptions-item>
+          <el-descriptions-item label="最后出现">{{ formatTime(alertDetail.last_seen || alertDetail.timestamp) }}</el-descriptions-item>
+          <el-descriptions-item label="重复次数">{{ alertDetail.repeat_count || 1 }}</el-descriptions-item>
+          <el-descriptions-item label="持续时间">{{ formatDuration(alertDetail.duration_seconds || 0) }}</el-descriptions-item>
         </el-descriptions>
 
         <div class="detail-section">
@@ -259,6 +294,11 @@ interface AlertRow {
   attack_type: string
   confidence: number
   is_false_positive: boolean
+  first_seen?: string
+  last_seen?: string
+  repeat_count?: number
+  event_status?: string
+  duration_seconds?: number
 }
 
 interface AlertDetail {
@@ -272,6 +312,11 @@ interface AlertDetail {
   attack_type: string
   confidence: number
   is_false_positive: boolean
+  first_seen?: string
+  last_seen?: string
+  repeat_count?: number
+  event_status?: string
+  duration_seconds?: number
   raw_features?: Record<string, any>
   shap_analysis?: {
     top_features?: { feature: string; value: number; shap_value: number; contribution: string }[]
@@ -306,6 +351,30 @@ const selectedAlerts = ref<AlertRow[]>([])
 
 const handleSelectionChange = (val: AlertRow[]) => {
   selectedAlerts.value = val
+}
+
+const handleExportReport = async (format: 'excel' | 'pdf') => {
+  try {
+    const res = await api.get(`/alerts/export-report?format=${format}`, {
+      responseType: 'blob' // Important for downloading files
+    })
+    
+    // Create blob link to download
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    // Use .xlsx for excel format
+    const extension = format === 'excel' ? 'xlsx' : format
+    link.setAttribute('download', `alerts_report.${extension}`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    ElMessage.success(`报表导出成功 (${format.toUpperCase()})`)
+  } catch (e: any) {
+    ElMessage.error('导出报表失败，可能暂无告警数据')
+    console.error(e)
+  }
 }
 
 const handleBatchDelete = async () => {
@@ -470,6 +539,13 @@ const getSeverity = (c: number): 'high' | 'medium' | 'low' => {
 }
 const formatTime = (ts: string) => {
   return new Date(ts).toLocaleString()
+}
+
+const formatDuration = (seconds: number) => {
+  if (seconds < 60) return `${seconds}s`
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`
 }
 
 const cleanAttackType = (type: string) => {

@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 from enum import Enum
 
+from config import settings
 from logging_config import app_logger as logger
+
 
 
 class FlowState(Enum):
@@ -173,7 +175,7 @@ class FlowAggregator:
                 self._cleanup_expired_flows()
             except Exception as e:
                 logger.error(f"Error in flow cleanup: {e}")
-            time.sleep(10.0)  # Check every 10 seconds
+            time.sleep(settings.FLOW_CLEANUP_INTERVAL)
     
     def _cleanup_expired_flows(self):
         """Remove expired flows and return them for processing"""
@@ -400,6 +402,7 @@ class FlowFeatureExtractor:
     
     def __init__(self):
         self.feature_names = self._get_feature_names()
+        self.lock = threading.Lock()
     
     def _get_feature_names(self) -> List[str]:
         """Get list of flow feature names (CIC-IDS2017 compatible)"""

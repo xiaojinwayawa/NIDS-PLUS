@@ -1,16 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import shutil
 import os
 import pandas as pd
 from datetime import datetime
+from pydantic import BaseModel
 
 from auth import get_current_user, TokenData
 from db.db_manager import get_db
 from db.models import DatasetModel
 from config import settings
 from logging_config import app_logger as logger
+
+# Import the new data balancer
+from ml.data_balancer import start_balance_task, get_balance_progress
 
 router = APIRouter()
 
@@ -25,6 +29,116 @@ DATA_DIR = os.path.join(project_root, "data", "datasets", "uploads")
 
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
+
+class BalanceRequest(BaseModel):
+    dataset_ids: List[int]
+    output_name: str
+    max_samples: int = 100000
+    min_samples: int = 10000
+
+@router.post("/balance")
+async def balance_datasets(
+    request: BalanceRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Start a background task to balance selected datasets
+    using the Two-Pass Streaming Sequential Balancer
+    """
+    if not request.dataset_ids:
+        raise HTTPException(status_code=400, detail="No datasets selected")
+        
+    if not request.output_name:
+        raise HTTPException(status_code=400, detail="Output name is required")
+        
+    # Gather file paths
+    input_files = []
+    
+    # 1. Check DB for uploaded/balanced datasets
+    db_datasets = db.query(DatasetModel).filter(DatasetModel.id.in_(request.dataset_ids)).all()
+    db_datasets_dict = {d.id: d.file_path for d in db_datasets}
+    
+    # 2. Check preset datasets
+    datasets_base = os.path.join(project_root, "data", "datasets")
+    preset_files = {}
+    preset_id_counter = -1
+    
+    for root, dirs, files in os.walk(datasets_base):
+        if 'uploads' in root or 'balanced' in root:
+            continue
+        for filename in files:
+            if filename.endswith(('.csv', '.txt', '.arff')):
+                preset_files[preset_id_counter] = os.path.join(root, filename)
+                preset_id_counter -= 1
+                
+    for ds_id in request.dataset_ids:
+        if ds_id > 0:
+            if ds_id in db_datasets_dict:
+                input_files.append(db_datasets_dict[ds_id])
+            else:
+                raise HTTPException(status_code=404, detail=f"Dataset {ds_id} not found")
+        else:
+            if ds_id in preset_files:
+                input_files.append(preset_files[ds_id])
+            else:
+                raise HTTPException(status_code=404, detail=f"Preset dataset {ds_id} not found")
+                
+    if not input_files:
+        raise HTTPException(status_code=400, detail="No valid input files resolved")
+        
+    # Define a callback to save the result to the database
+    def db_callback(output_file_path):
+        from db.db_manager import SessionLocal
+        db_session = SessionLocal()
+        try:
+            # Determine dataset type based on inputs
+            dataset_type = "Mixed"
+            if all("CIC" in f or "IDS2017" in f for f in input_files):
+                dataset_type = "CIC-IDS2017"
+            elif all("KDD" in f for f in input_files):
+                dataset_type = "NSL-KDD"
+                
+            # Create a relative path for the database
+            rel_path = os.path.relpath(output_file_path, project_root)
+            
+            new_dataset = DatasetModel(
+                name=f"{request.output_name} (Balanced)",
+                type=dataset_type,
+                file_path=rel_path,
+                file_size=os.path.getsize(output_file_path),
+                uploaded_at=datetime.utcnow()
+            )
+            db_session.add(new_dataset)
+            db_session.commit()
+        except Exception as e:
+            logger.error(f"Failed to save balanced dataset to DB: {e}")
+        finally:
+            db_session.close()
+            
+    # Start the task
+    try:
+        task_id = start_balance_task(
+            input_files=input_files,
+            output_name=request.output_name,
+            max_samples=request.max_samples,
+            min_samples=request.min_samples,
+            db_callback=db_callback
+        )
+        return {"message": "Data balancing started", "task_id": task_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/balance/progress/{task_id}")
+async def get_balance_task_progress(
+    task_id: str,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get the progress of a data balancing task"""
+    progress = get_balance_progress(task_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return progress
 
 @router.post("/upload")
 async def upload_dataset(
@@ -111,45 +225,56 @@ async def list_datasets(
     datasets_base = os.path.join(project_root, "data", "datasets")
     preset_id = -1  # Use negative IDs for preset datasets
     
-    for folder_name in os.listdir(datasets_base):
-        folder_path = os.path.join(datasets_base, folder_name)
-        # Skip uploads folder and non-directories
-        if folder_name == "uploads" or not os.path.isdir(folder_path):
+    for root, dirs, files in os.walk(datasets_base):
+        # Only skip uploads directory, INCLUDE balanced directory
+        if 'uploads' in root:
             continue
-        
-        # Find CSV, TXT, and ARFF files in this folder
-        dataset_files = [f for f in os.listdir(folder_path) if f.endswith(('.csv', '.txt', '.arff'))]
-        for csv_file in dataset_files:
-            csv_path = os.path.join(folder_path, csv_file)
-            # Get file info
-            try:
-                file_stat = os.stat(csv_path)
-                # Quick row count estimate (read first few lines)
-                with open(csv_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    # Count lines (approximate)
-                    sample_count = sum(1 for _ in f) - 1  # Subtract header
-            except:
-                sample_count = 0
             
-            name = csv_file
-            if csv_file.endswith('.csv'):
-                name = csv_file[:-4]
-            elif csv_file.endswith('.txt'):
-                name = csv_file[:-4]
-            elif csv_file.endswith('.arff'):
-                name = csv_file[:-5]
-            
-            result.append({
-                "id": preset_id,
-                "name": name,
-                "type": folder_name,
-                "sample_count": sample_count,
-                "created_at": datetime.fromtimestamp(file_stat.st_mtime).isoformat() if file_stat else None,
-                "description": f"Pre-existing {folder_name} dataset ({csv_file.split('.')[-1].upper()})",
-                "source": "preset",
-                "file_path": csv_path
-            })
-            preset_id -= 1
+        for filename in files:
+            if filename.endswith(('.csv', '.txt', '.arff')):
+                file_path = os.path.join(root, filename)
+                
+                # Get file info
+                try:
+                    file_stat = os.stat(file_path)
+                    # Quick row count estimate (read first few lines)
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        # Count lines (approximate)
+                        sample_count = sum(1 for _ in f) - 1  # Subtract header
+                except:
+                    sample_count = 0
+                
+                name = filename
+                if filename.endswith('.csv'):
+                    name = filename[:-4]
+                elif filename.endswith('.txt'):
+                    name = filename[:-4]
+                elif filename.endswith('.arff'):
+                    name = filename[:-5]
+                
+                folder_name = os.path.basename(root)
+                dataset_type = folder_name
+                if "CIC-IDS2017" in file_path or "CIC-IDS-2017" in file_path or "ids2017" in file_path.lower():
+                    dataset_type = "CIC-IDS2017"
+                elif "KDD" in file_path:
+                    dataset_type = "NSL-KDD"
+                
+                # Check if it's a balanced file
+                display_name = name
+                if 'balanced' in root:
+                    display_name = f"[Balanced] {name}"
+                
+                result.append({
+                    "id": preset_id,
+                    "name": display_name,
+                    "type": dataset_type,
+                    "sample_count": sample_count,
+                    "created_at": datetime.fromtimestamp(file_stat.st_mtime).isoformat() if file_stat else None,
+                    "description": f"Pre-existing {dataset_type} dataset ({filename.split('.')[-1].upper()})",
+                    "source": "preset",
+                    "file_path": file_path
+                })
+                preset_id -= 1
     
     return result
 

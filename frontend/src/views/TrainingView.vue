@@ -53,9 +53,18 @@
             <el-option v-for="d in datasets" :key="d.id" :label="`${d.name} (${d.type})`" :value="d.id" />
           </el-select>
         </el-form-item>
+        
+        <el-form-item label="不平衡处理 (SMOTE)">
+          <el-switch v-model="form.use_smote" active-text="开启" inactive-text="关闭" />
+          <span style="margin-left: 10px; font-size: 12px; color: #909399;">(提示：使用外部平衡后的数据时请保持关闭)</span>
+        </el-form-item>
+
         <el-form-item>
           <el-button type="success" @click="startTraining" :disabled="form.dataset_ids.length === 0">
             开始训练 ({{ form.dataset_ids.length }})
+          </el-button>
+          <el-button type="warning" plain @click="balancerVisible = true" style="margin-left: 15px;">
+            ⚖️ 类别平衡器 (Data Balancer)
           </el-button>
         </el-form-item>
       </el-form>
@@ -82,19 +91,52 @@
           </template>
         </el-table-column>
         <el-table-column prop="dataset_type" label="数据集" width="140" />
-        <el-table-column prop="is_active" label="状态" width="100">
-          <template #default="scope">
-            <el-tag :type="scope.row.is_active ? 'success' : 'info'">{{ scope.row.is_active ? '启用' : '禁用' }}</el-tag>
-          </template>
-        </el-table-column>
+
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
-            <el-button size="small" type="primary" :disabled="scope.row.is_active" @click="activate(scope.row)">启用</el-button>
-            <el-button size="small" type="danger" :disabled="scope.row.is_active" @click="deleteModel(scope.row)">删除</el-button>
+            <el-button size="small" type="danger" @click="deleteModel(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <!-- 独立类别平衡器 (Data Balancer) -->
+    <el-dialog v-model="balancerVisible" title="⚖️ 类别平衡器 (Data Balancer)" width="600px" :close-on-click-modal="false" @close="stopBalancerPolling">
+      <el-alert
+        title="严格时序平衡：保留小类的原始交互顺序（大类截断，小类循环复制）"
+        type="warning"
+        :closable="false"
+        style="margin-bottom: 20px"
+      />
+      <el-form label-width="120px" :disabled="balancing">
+        <el-form-item label="源数据集" required>
+          <el-select v-model="balancerForm.dataset_ids" multiple placeholder="可多选，合并平衡" style="width: 100%">
+            <el-option v-for="d in datasets" :key="d.id" :label="`${d.name} (${d.type})`" :value="d.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="新文件命名" required>
+          <el-input v-model="balancerForm.output_name" placeholder="如: balanced_friday" />
+        </el-form-item>
+        <el-form-item label="单类上限 (大类)">
+          <el-input-number v-model="balancerForm.max_samples" :min="10000" :step="10000" style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="单类下限 (小类)">
+          <el-input-number v-model="balancerForm.min_samples" :min="1000" :step="1000" style="width: 160px" />
+        </el-form-item>
+      </el-form>
+
+      <div v-if="balancerProgress" style="margin-top: 20px;">
+        <p>{{ balancerProgress.message }} ({{ formatTime(balancerProgress.elapsed) }})</p>
+        <el-progress :percentage="balancerProgress.percent" :status="balancerProgress.stage === 'complete' ? 'success' : (balancerProgress.stage === 'error' ? 'exception' : '')" />
+      </div>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="balancerVisible = false" :disabled="balancing">取消</el-button>
+          <el-button type="primary" @click="startBalancing" :loading="balancing">开始平衡</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -118,10 +160,16 @@ const currentTaskId = ref<string | null>(null)
 let progressInterval: number | null = null
 const TRAINING_TASK_KEY = 'trainingTaskId'
 
+const form = ref({ model_type: 'lightgbm', model_type_path: ['ml', 'lightgbm'] as string[], model_name: '', dataset_ids: [] as number[], epochs: 20, use_smote: false })
+const isDLModel = computed(() => ['cnn', 'cnn_resattn', 'gru', 'transformer'].includes(form.value.model_type))
 
-
-const form = ref({ model_type: 'lightgbm', model_type_path: ['ml', 'lightgbm'] as string[], model_name: '', dataset_ids: [] as number[], epochs: 20 })
-const isDLModel = computed(() => ['cnn', 'gru', 'transformer'].includes(form.value.model_type))
+// Balancer state
+const balancerVisible = ref(false)
+const balancing = ref(false)
+const balancerForm = ref({ dataset_ids: [] as number[], output_name: '', max_samples: 100000, min_samples: 10000 })
+const balancerProgress = ref<any>(null)
+let balancerInterval: number | null = null
+let currentBalanceTaskId: string | null = null
 const formatTime = (s: number) => s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s/60)}m ${(s%60).toFixed(0)}s`
 
 // 模型类型级联选择器选项
@@ -139,6 +187,7 @@ const modelTypeOptions = [
     label: '🧠 深度学习',
     children: [
       { value: 'cnn', label: '📊 1D-CNN' },
+      { value: 'cnn_resattn', label: '📈 1D-CNN（残差&注意力）' },
       { value: 'gru', label: '🔄 GRU' },
       { value: 'transformer', label: '🔮 Transformer' }
     ]
@@ -257,11 +306,12 @@ const startTraining = async () => {
     const payload: any = {
       model_type: form.value.model_type,
       dataset_ids: form.value.dataset_ids,
-      model_name: form.value.model_name || undefined
+      model_name: form.value.model_name || undefined,
+      epochs: isDLModel.value ? form.value.epochs : undefined,
+      use_smote: form.value.use_smote
     }
     const datasetPaths = selectedDatasets.value.map(d => d.file_path).filter(Boolean) as string[]
     if (datasetPaths.length > 0) payload.dataset_paths = datasetPaths
-    if (isDLModel.value) payload.epochs = form.value.epochs
     const res = await api.post('/models/train', payload)
     currentTaskId.value = res.data.task_id
     saveTrainingTaskId(currentTaskId.value)
@@ -297,14 +347,7 @@ const stopTraining = async () => {
   }
 }
 
-const activate = async (model: any) => {
-  try {
-    if (model.id < 0) await api.post(`/models/activate/${model.id}?model_name=${model.name}&model_type=${model.type}`)
-    else await api.post(`/models/activate/${model.id}`)
-    ElMessage.success('模型已启用')
-    await loadData()
-  } catch (e: any) { ElMessage.error(e.response?.data?.detail || '启用失败') }
-}
+
 
 const deleteModel = async (model: any) => {
   try {
@@ -325,6 +368,63 @@ const deleteModel = async (model: any) => {
     if (e !== 'cancel') {
       ElMessage.error(e.response?.data?.detail || '删除失败')
     }
+  }
+}
+
+// 类别平衡器逻辑
+const startBalancing = async () => {
+  if (balancerForm.value.dataset_ids.length === 0) {
+    ElMessage.warning('请选择至少一个数据集')
+    return
+  }
+  if (!balancerForm.value.output_name) {
+    ElMessage.warning('请输入新文件命名')
+    return
+  }
+  
+  try {
+    balancing.value = true
+    balancerProgress.value = null
+    const res = await api.post('/datasets/balance', balancerForm.value)
+    currentBalanceTaskId = res.data.task_id
+    ElMessage.success('平衡任务已启动，请等待...')
+    startBalancerPolling()
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || '启动失败')
+    balancing.value = false
+  }
+}
+
+const pollBalancerProgress = async () => {
+  if (!currentBalanceTaskId) return
+  try {
+    const res = await api.get(`/datasets/balance/progress/${currentBalanceTaskId}`)
+    balancerProgress.value = res.data
+    
+    if (res.data.stage === 'complete') {
+      stopBalancerPolling()
+      balancing.value = false
+      ElMessage.success('数据平衡成功！')
+      await loadData() // 刷新数据集列表
+    } else if (res.data.stage === 'error') {
+      stopBalancerPolling()
+      balancing.value = false
+      ElMessage.error(res.data.message || '平衡失败')
+    }
+  } catch (e) {
+    stopBalancerPolling()
+    balancing.value = false
+  }
+}
+
+const startBalancerPolling = () => {
+  if (!balancerInterval) balancerInterval = window.setInterval(pollBalancerProgress, 1000)
+}
+
+const stopBalancerPolling = () => {
+  if (balancerInterval) {
+    clearInterval(balancerInterval)
+    balancerInterval = null
   }
 }
 

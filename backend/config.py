@@ -37,8 +37,27 @@ class Settings(BaseSettings):
     INFERENCE_INTERVAL_MS: int = 50
     ALERT_THRESHOLD: float = 0.8
     MAX_QUEUE_SIZE: int = 10000
-    
+    FLOW_MIN_PACKETS: int = 3
+    MULTICLASS_CONFIDENCE_THRESHOLD: float = 0.80
+    ALERT_EVENT_COOLDOWN_SECONDS: int = 15
+    ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS: int = 30
+    FLOW_AGGREGATION_TIMEOUT: float = 120.0
+    FLOW_IDLE_TIMEOUT: float = 5.0
+    FLOW_TCP_TIMEOUT: float = 120.0
+    FLOW_UDP_TIMEOUT: float = 120.0
+    FLOW_ICMP_TIMEOUT: float = 120.0
+    FLOW_MAX_PACKETS: int = 500
+    FLOW_ENABLE_BIDIRECTIONAL: bool = True
+    PCAP_REPLAY_INTERVAL: float = 0.001
+    FLOW_CHECK_INTERVAL: float = 0.5
+    PIPELINE_IDLE_SLEEP: float = 0.05
+    FLOW_CLEANUP_INTERVAL: float = 30.0
+    #调参建议：
+    #- 静默环境误报多：优先把 multiclass_confidence_threshold 从 0.80 提到 0.85
+    #- 背景心跳包多：把 flow_min_packets 从 3 提到 4 或 5
+    #- 怕漏掉短流探测：保留 flow_min_packets=3 ，只微调置信度阈值
     # Features
+    
     ENABLE_SHAP: bool = True
     
     # Logging

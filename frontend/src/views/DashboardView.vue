@@ -103,7 +103,10 @@
               >
                 <div class="alert-time">{{ formatTime(alert.timestamp) }}</div>
                 <div class="alert-info">
-                  <span class="alert-type">{{ alert.attack_type }}</span>
+                  <span class="alert-type">
+                    {{ alert.attack_type }}
+                    <span v-if="(alert.repeat_count || 1) > 1" class="alert-repeat">x{{ alert.repeat_count }}</span>
+                  </span>
                   <span class="alert-src">{{ alert.src_ip }}</span>
                 </div>
               </div>
@@ -631,6 +634,12 @@ const formatTime = (ts: string) => {
   font-weight: 500;
   font-size: 14px;
   color: #303133;
+}
+
+.alert-repeat {
+  margin-left: 6px;
+  color: #c0392b;
+  font-weight: 700;
 }
 
 .alert-src {

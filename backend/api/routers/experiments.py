@@ -370,6 +370,7 @@ class ExperimentRequest(BaseModel):
     transformer_ff_dim: int = 128
     transformer_num_blocks: int = 2
     fusion_strategy: str = "weighted"
+    use_smote: bool = False
 
 
 class DatasetFileInfo(BaseModel):
@@ -484,6 +485,14 @@ async def run_experiment(
                 transformer_num_blocks=request.transformer_num_blocks,
                 fusion_strategy=request.fusion_strategy
             )
+            
+            # Map use_smote explicitly if added to ExperimentConfig in the future
+            # Currently ExperimentConfig uses use_class_weights, but we can set it
+            if hasattr(config, 'use_smote'):
+                config.use_smote = request.use_smote
+            elif request.use_smote:
+                # If experiment config doesn't have use_smote, fallback to use_class_weights
+                config.use_class_weights = True
             
             runner = ExperimentRunner()
             

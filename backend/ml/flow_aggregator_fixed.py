@@ -16,6 +16,7 @@ from enum import Enum
 from logging_config import app_logger as logger
 
 
+
 class FlowState(Enum):
     """Flow lifecycle states"""
     ACTIVE = "active"
@@ -380,6 +381,7 @@ class FlowFeatureExtractor:
     
     def __init__(self):
         self.feature_names = self._get_feature_names()
+        self.lock = threading.Lock()
     
     def _get_feature_names(self) -> List[str]:
         """Get list of flow feature names (CIC-IDS2017 compatible)"""

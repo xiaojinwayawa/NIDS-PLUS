@@ -57,6 +57,8 @@ def _infer_model_type(model_name: str, meta_file: Optional[str] = None) -> str:
         return "lightgbm"
     if "xgboost" in lower_name or "xgb" in lower_name:
         return "xgboost"
+    if "cnn_resattn" in lower_name or "resattn" in lower_name:
+        return "cnn_resattn"
     if "cnn" in lower_name:
         return "cnn"
     if "gru" in lower_name:
@@ -170,6 +172,7 @@ class TrainRequest(BaseModel):
     dataset_paths: Optional[List[str]] = None
     model_name: Optional[str] = None
     epochs: Optional[int] = None
+    use_smote: bool = False
 
 def get_engine(request: Request) -> DetectionEngine:
     return request.app.state.engine
@@ -378,6 +381,7 @@ async def train_model(
     dataset_paths = request.dataset_paths
     model_name = request.model_name
     epochs = request.epochs
+    use_smote = request.use_smote
     
     if not model_type:
         raise HTTPException(status_code=400, detail="model_type is required")
@@ -477,7 +481,8 @@ async def train_model(
         nonlocal dataset_type
         try:
             tm = TrainingManager()
-            metrics = tm.train_model(model_type, dataset_files, params=None, model_name=model_name, task_id=task_id, epochs=epochs)
+            params = {"use_smote": use_smote}
+            metrics = tm.train_model(model_type, dataset_files, params=params, model_name=model_name, task_id=task_id, epochs=epochs)
             
             # Save to database using a new session
             db_session = SessionLocal()
@@ -593,43 +598,7 @@ async def stop_training(
     
     return {"message": "Training stopped"}
 
-@router.post("/activate/{model_id}")
-async def activate_model(
-    model_id: int,
-    model_name: Optional[str] = None,
-    model_type: Optional[str] = None,
-    current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    engine: DetectionEngine = Depends(get_engine)
-):
-    if model_id > 0:
-        # Database model
-        m = db.query(ModelModel).filter(ModelModel.id == model_id).first()
-        if not m:
-            raise HTTPException(status_code=404, detail="Model not found")
 
-        db.query(ModelModel).update({ModelModel.is_active: False})
-        m.is_active = True
-        db.commit()
-
-        engine.current_model_name = m.name
-        success = engine.inference_engine.load_model(m.name, m.type)
-    else:
-        # Preset model (negative ID) - need model_name and model_type from request
-        if not model_name or not model_type:
-            raise HTTPException(status_code=400, detail="model_name and model_type required for preset models")
-        
-        # Deactivate all database models
-        db.query(ModelModel).update({ModelModel.is_active: False})
-        db.commit()
-        
-        engine.current_model_name = model_name
-        success = engine.inference_engine.load_model(model_name, model_type)
-    
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to load model into engine")
-
-    return {"message": "Model activated", "name": engine.current_model_name}
 
 @router.get("/metrics", response_model=List[dict])
 async def list_model_metrics(
@@ -678,9 +647,9 @@ async def delete_model(
         if not m:
             raise HTTPException(status_code=404, detail="Model not found")
         
-        # Check if model is currently active
-        if m.is_active:
-            raise HTTPException(status_code=400, detail="Cannot delete active model, please deactivate first")
+        # Check if model is currently loaded in engine
+        if engine.current_model_name == m.name:
+            raise HTTPException(status_code=400, detail="Cannot delete the model currently loaded in the detection engine")
         
         # Delete metrics first
         db.query(ModelMetricModel).filter(ModelMetricModel.model_id == model_id).delete()
@@ -800,6 +769,8 @@ async def upload_model(
             model_type = "lightgbm"
         elif "xgboost" in lower_name or "xgb" in lower_name:
             model_type = "xgboost"
+        elif "cnn_resattn" in lower_name or "resattn" in lower_name:
+            model_type = "cnn_resattn"
         elif "cnn" in lower_name:
             model_type = "cnn"
         elif "gru" in lower_name:
@@ -937,6 +908,8 @@ async def import_local_model(
             model_type = "lightgbm"
         elif "xgboost" in lower_name or "xgb" in lower_name:
             model_type = "xgboost"
+        elif "cnn_resattn" in lower_name or "resattn" in lower_name:
+            model_type = "cnn_resattn"
         elif "cnn" in lower_name:
             model_type = "cnn"
         elif "gru" in lower_name:

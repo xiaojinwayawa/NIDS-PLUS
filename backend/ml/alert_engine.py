@@ -2,11 +2,13 @@
 Alert Engine Module
 Handles alert generation, persistence, and querying
 """
+from copy import deepcopy
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from db.db_manager import SessionLocal
 from db.models import AlertModel
+from config import settings
 from logging_config import app_logger as logger
 
 class AlertEngine:
@@ -16,6 +18,80 @@ class AlertEngine:
     
     def __init__(self):
         pass
+
+    def _build_event_payload(
+        self,
+        *,
+        first_seen: datetime,
+        last_seen: datetime,
+        repeat_count: int,
+        status: str
+    ) -> Dict[str, Any]:
+        duration_seconds = max(0, int((last_seen - first_seen).total_seconds()))
+        return {
+            "first_seen": first_seen.isoformat(),
+            "last_seen": last_seen.isoformat(),
+            "repeat_count": repeat_count,
+            "status": status,
+            "duration_seconds": duration_seconds,
+            "cooldown_seconds": settings.ALERT_EVENT_COOLDOWN_SECONDS,
+            "resolve_timeout_seconds": settings.ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS,
+        }
+
+    def _parse_event_time(self, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str) and value:
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def _get_event_payload(self, alert: AlertModel) -> Dict[str, Any]:
+        raw_features = alert.raw_features if isinstance(alert.raw_features, dict) else {}
+        event = raw_features.get("event", {})
+        first_seen = self._parse_event_time(event.get("first_seen")) or alert.timestamp or datetime.utcnow()
+        last_seen = self._parse_event_time(event.get("last_seen")) or alert.timestamp or first_seen
+        repeat_count = int(event.get("repeat_count", 1))
+        status = event.get("status", "active")
+        return self._build_event_payload(
+            first_seen=first_seen,
+            last_seen=last_seen,
+            repeat_count=repeat_count,
+            status=status,
+        )
+
+    def _resolve_status(self, event: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+        now = now or datetime.utcnow()
+        last_seen = self._parse_event_time(event.get("last_seen")) or now
+        resolved = (now - last_seen) > timedelta(seconds=settings.ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS)
+        event["status"] = "resolved" if resolved else "active"
+        event["duration_seconds"] = max(
+            0,
+            int((last_seen - (self._parse_event_time(event.get("first_seen")) or last_seen)).total_seconds())
+        )
+        return event
+
+    def _decorate_alert_dict(self, alert: AlertModel, now: Optional[datetime] = None) -> Dict[str, Any]:
+        event = self._resolve_status(self._get_event_payload(alert), now=now)
+        return {
+            "id": alert.id,
+            "timestamp": alert.timestamp,
+            "src_ip": alert.src_ip,
+            "dst_ip": alert.dst_ip,
+            "src_port": alert.src_port,
+            "dst_port": alert.dst_port,
+            "protocol": alert.protocol,
+            "attack_type": alert.attack_type,
+            "confidence": alert.confidence,
+            "is_false_positive": alert.is_false_positive,
+            "first_seen": event["first_seen"],
+            "last_seen": event["last_seen"],
+            "repeat_count": event["repeat_count"],
+            "event_status": event["status"],
+            "duration_seconds": event["duration_seconds"],
+        }
 
     def generate_alert(self, 
                        packet_info: Dict[str, Any], 
@@ -52,6 +128,7 @@ class AlertEngine:
         if not is_attack:
             return None
             
+        db = SessionLocal()
         try:
             # Handle timestamp - could be float, int, or missing
             pkt_timestamp = packet_info.get("timestamp", 0)
@@ -59,30 +136,105 @@ class AlertEngine:
                 alert_timestamp = datetime.fromtimestamp(pkt_timestamp)
             else:
                 alert_timestamp = datetime.utcnow()
-            
-            # Create alert record (model_id can be None)
+
+            src_ip = packet_info.get("src_ip", "0.0.0.0")
+            attack_type = prediction_result.get("attack_type", "Generic Attack")
+            confidence = float(prediction_result.get("confidence", 1.0))
+
+            existing = db.query(AlertModel)\
+                .filter(
+                    AlertModel.src_ip == src_ip,
+                    AlertModel.attack_type == attack_type
+                )\
+                .order_by(AlertModel.timestamp.desc())\
+                .first()
+
+            if existing:
+                current_event = self._get_event_payload(existing)
+                last_seen = self._parse_event_time(current_event["last_seen"]) or existing.timestamp or alert_timestamp
+                first_seen = self._parse_event_time(current_event["first_seen"]) or existing.timestamp or alert_timestamp
+                delta_seconds = max(0.0, (alert_timestamp - last_seen).total_seconds())
+
+                if delta_seconds <= settings.ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS:
+                    merged_raw_features = deepcopy(existing.raw_features) if isinstance(existing.raw_features, dict) else {}
+                    for key, value in packet_info.items():
+                        if key != "event":
+                            merged_raw_features[key] = value
+
+                    merged_raw_features["event"] = self._build_event_payload(
+                        first_seen=first_seen,
+                        last_seen=alert_timestamp,
+                        repeat_count=int(current_event["repeat_count"]) + 1,
+                        status="active",
+                    )
+
+                    existing.timestamp = alert_timestamp
+                    existing.dst_ip = packet_info.get("dst_ip", existing.dst_ip)
+                    existing.src_port = packet_info.get("src_port", existing.src_port)
+                    existing.dst_port = packet_info.get("dst_port", existing.dst_port)
+                    existing.protocol = packet_info.get("protocol", existing.protocol)
+                    existing.confidence = max(float(existing.confidence or 0.0), confidence)
+                    existing.raw_features = merged_raw_features
+
+                    setattr(existing, "_event_action", "merged")
+                    setattr(existing, "_suppress_broadcast", delta_seconds < settings.ALERT_EVENT_COOLDOWN_SECONDS)
+
+                    db.commit()
+                    db.refresh(existing)
+                    logger.info(
+                        f"Alert event updated: {existing.attack_type} from {existing.src_ip}, "
+                        f"repeat_count={merged_raw_features['event']['repeat_count']}"
+                    )
+                    return existing
+
+                # Previous event is stale; mark it resolved and create a new event record.
+                stale_raw_features = deepcopy(existing.raw_features) if isinstance(existing.raw_features, dict) else {}
+                stale_raw_features["event"] = self._build_event_payload(
+                    first_seen=first_seen,
+                    last_seen=last_seen,
+                    repeat_count=int(current_event["repeat_count"]),
+                    status="resolved",
+                )
+                existing.raw_features = stale_raw_features
+                db.flush()
+
+            raw_features = deepcopy(packet_info)
+            raw_features["event"] = self._build_event_payload(
+                first_seen=alert_timestamp,
+                last_seen=alert_timestamp,
+                repeat_count=1,
+                status="active",
+            )
+
             alert = AlertModel(
                 timestamp=alert_timestamp,
-                src_ip=packet_info.get("src_ip", "0.0.0.0"),
+                src_ip=src_ip,
                 dst_ip=packet_info.get("dst_ip", "0.0.0.0"),
                 src_port=packet_info.get("src_port", 0),
                 dst_port=packet_info.get("dst_port", 0),
                 protocol=packet_info.get("protocol", "UNKNOWN"),
-                attack_type=prediction_result.get("attack_type", "Generic Attack"),
-                confidence=prediction_result.get("confidence", 1.0),
+                attack_type=attack_type,
+                confidence=confidence,
                 model_id=model_id,
-                raw_features=packet_info # Store raw info for forensics
+                raw_features=raw_features
             )
-            
-            # Persist to DB
-            self._save_alert(alert)
-            
+
+            db.add(alert)
+            db.commit()
+            db.refresh(alert)
+
+            setattr(alert, "_event_action", "created")
+            setattr(alert, "_suppress_broadcast", False)
+
             logger.info(f"Alert generated: {alert.attack_type} from {alert.src_ip}")
             return alert
-            
+
         except Exception as e:
             logger.error(f"Error generating alert: {e}")
+            db.rollback()
             return None
+        finally:
+            db.close()
 
     def _save_alert(self, alert: AlertModel):
         """Save alert to database"""
@@ -101,23 +253,9 @@ class AlertEngine:
         """Get recent alerts"""
         db = SessionLocal()
         try:
-            alerts = db.query(AlertModel).order_by(AlertModel.id.desc()).offset(skip).limit(limit).all()
-            # Convert to dict for JSON serialization
-            result = []
-            for alert in alerts:
-                result.append({
-                    "id": alert.id,
-                    "timestamp": alert.timestamp,
-                    "src_ip": alert.src_ip,
-                    "dst_ip": alert.dst_ip,
-                    "src_port": alert.src_port,
-                    "dst_port": alert.dst_port,
-                    "protocol": alert.protocol,
-                    "attack_type": alert.attack_type,
-                    "confidence": alert.confidence,
-                    "is_false_positive": alert.is_false_positive
-                })
-            return result
+            alerts = db.query(AlertModel).order_by(AlertModel.timestamp.desc()).offset(skip).limit(limit).all()
+            now = datetime.utcnow()
+            return [self._decorate_alert_dict(alert, now=now) for alert in alerts]
         except Exception as e:
             logger.error(f"Error getting alerts: {e}")
             return []

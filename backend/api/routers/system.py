@@ -20,6 +20,21 @@ class GlobalConfigUpdate(BaseModel):
     batch_size: Optional[int] = None
     enable_shap: Optional[bool] = None
     log_level: Optional[str] = None
+    flow_min_packets: Optional[int] = None
+    multiclass_confidence_threshold: Optional[float] = None
+    alert_event_cooldown_seconds: Optional[int] = None
+    alert_event_resolve_timeout_seconds: Optional[int] = None
+    flow_aggregation_timeout: Optional[float] = None
+    flow_idle_timeout: Optional[float] = None
+    flow_tcp_timeout: Optional[float] = None
+    flow_udp_timeout: Optional[float] = None
+    flow_icmp_timeout: Optional[float] = None
+    flow_max_packets: Optional[int] = None
+    flow_enable_bidirectional: Optional[bool] = None
+    pcap_replay_interval: Optional[float] = None
+    flow_check_interval: Optional[float] = None
+    pipeline_idle_sleep: Optional[float] = None
+    flow_cleanup_interval: Optional[float] = None
 
 class StartRequest(BaseModel):
     mode: str = "pcap"
@@ -36,7 +51,22 @@ async def get_config(current_user: TokenData = Depends(get_current_user)):
         "alert_threshold": settings.ALERT_THRESHOLD,
         "batch_size": settings.BATCH_SIZE,
         "enable_shap": settings.ENABLE_SHAP,
-        "log_level": settings.LOG_LEVEL
+        "log_level": settings.LOG_LEVEL,
+        "flow_min_packets": settings.FLOW_MIN_PACKETS,
+        "multiclass_confidence_threshold": settings.MULTICLASS_CONFIDENCE_THRESHOLD,
+        "alert_event_cooldown_seconds": settings.ALERT_EVENT_COOLDOWN_SECONDS,
+        "alert_event_resolve_timeout_seconds": settings.ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS,
+        "flow_aggregation_timeout": settings.FLOW_AGGREGATION_TIMEOUT,
+        "flow_idle_timeout": settings.FLOW_IDLE_TIMEOUT,
+        "flow_tcp_timeout": settings.FLOW_TCP_TIMEOUT,
+        "flow_udp_timeout": settings.FLOW_UDP_TIMEOUT,
+        "flow_icmp_timeout": settings.FLOW_ICMP_TIMEOUT,
+        "flow_max_packets": settings.FLOW_MAX_PACKETS,
+        "flow_enable_bidirectional": settings.FLOW_ENABLE_BIDIRECTIONAL,
+        "pcap_replay_interval": settings.PCAP_REPLAY_INTERVAL,
+        "flow_check_interval": settings.FLOW_CHECK_INTERVAL,
+        "pipeline_idle_sleep": settings.PIPELINE_IDLE_SLEEP,
+        "flow_cleanup_interval": settings.FLOW_CLEANUP_INTERVAL,
     }
 
 @router.put("/config")
@@ -58,6 +88,36 @@ async def update_config(
         settings.ENABLE_SHAP = config.enable_shap
     if config.log_level is not None:
         settings.LOG_LEVEL = config.log_level
+    if config.flow_min_packets is not None:
+        settings.FLOW_MIN_PACKETS = config.flow_min_packets
+    if config.multiclass_confidence_threshold is not None:
+        settings.MULTICLASS_CONFIDENCE_THRESHOLD = config.multiclass_confidence_threshold
+    if config.alert_event_cooldown_seconds is not None:
+        settings.ALERT_EVENT_COOLDOWN_SECONDS = config.alert_event_cooldown_seconds
+    if config.alert_event_resolve_timeout_seconds is not None:
+        settings.ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS = config.alert_event_resolve_timeout_seconds
+    if config.flow_aggregation_timeout is not None:
+        settings.FLOW_AGGREGATION_TIMEOUT = config.flow_aggregation_timeout
+    if config.flow_idle_timeout is not None:
+        settings.FLOW_IDLE_TIMEOUT = config.flow_idle_timeout
+    if config.flow_tcp_timeout is not None:
+        settings.FLOW_TCP_TIMEOUT = config.flow_tcp_timeout
+    if config.flow_udp_timeout is not None:
+        settings.FLOW_UDP_TIMEOUT = config.flow_udp_timeout
+    if config.flow_icmp_timeout is not None:
+        settings.FLOW_ICMP_TIMEOUT = config.flow_icmp_timeout
+    if config.flow_max_packets is not None:
+        settings.FLOW_MAX_PACKETS = config.flow_max_packets
+    if config.flow_enable_bidirectional is not None:
+        settings.FLOW_ENABLE_BIDIRECTIONAL = config.flow_enable_bidirectional
+    if config.pcap_replay_interval is not None:
+        settings.PCAP_REPLAY_INTERVAL = config.pcap_replay_interval
+    if config.flow_check_interval is not None:
+        settings.FLOW_CHECK_INTERVAL = config.flow_check_interval
+    if config.pipeline_idle_sleep is not None:
+        settings.PIPELINE_IDLE_SLEEP = config.pipeline_idle_sleep
+    if config.flow_cleanup_interval is not None:
+        settings.FLOW_CLEANUP_INTERVAL = config.flow_cleanup_interval
         
     return {"message": "Configuration updated", "config": config.model_dump(exclude_unset=True)}
 

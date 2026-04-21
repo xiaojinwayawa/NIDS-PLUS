@@ -17,6 +17,12 @@ interface Alert {
   attack_type: string
   confidence: number
   severity: string
+  first_seen?: string
+  last_seen?: string
+  repeat_count?: number
+  event_status?: string
+  duration_seconds?: number
+  event_action?: string
 }
 
 interface TrafficStats {
@@ -164,9 +170,23 @@ export const useSystemStore = defineStore('system', () => {
         break
       case 'alert':
         const alert: Alert = message.data
-        recentAlerts.value.unshift(alert)
+        if (alert.id != null) {
+          const existingIndex = recentAlerts.value.findIndex(a => a.id === alert.id)
+          if (existingIndex >= 0) {
+            recentAlerts.value[existingIndex] = {
+              ...recentAlerts.value[existingIndex],
+              ...alert
+            }
+            const [updatedAlert] = recentAlerts.value.splice(existingIndex, 1)
+            recentAlerts.value.unshift(updatedAlert)
+          } else {
+            recentAlerts.value.unshift(alert)
+          }
+        } else {
+          recentAlerts.value.unshift(alert)
+        }
         if (recentAlerts.value.length > 20) {
-          recentAlerts.value.pop()
+          recentAlerts.value.length = 20
         }
         updateThreatLevel()
         break

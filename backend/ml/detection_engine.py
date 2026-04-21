@@ -6,6 +6,7 @@ Capture -> Feature Extraction -> Inference -> Alerting -> SHAP
 import time
 import threading
 import json
+import os
 import redis
 import enum
 from typing import Optional, Dict, Any
@@ -111,6 +112,37 @@ class DetectionEngine:
         """Set the main event loop for async operations from threads"""
         self._main_loop = loop
 
+    def _resolve_model_type(self, model_name: str, models_dir: str) -> str:
+        """Resolve model type from metadata first, then fall back to name heuristics."""
+        meta_path = os.path.join(models_dir, f"{model_name}_meta.json")
+
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                model_type = str(metadata.get("type", "")).strip().lower()
+                if model_type:
+                    return model_type
+            except Exception as e:
+                logger.warning(f"Failed to resolve model type from metadata for {model_name}: {e}")
+
+        lower_name = model_name.lower()
+        if "fusion" in lower_name:
+            return "fusion"
+        if "xgb" in lower_name or "xgboost" in lower_name:
+            return "xgboost"
+        if "cnn_resattn" in lower_name or "resattn" in lower_name:
+            return "cnn_resattn"
+        if "cnn" in lower_name:
+            return "cnn"
+        if "gru" in lower_name:
+            return "gru"
+        if "transformer" in lower_name:
+            return "transformer"
+        if "lightgbm" in lower_name:
+            return "lightgbm"
+        return "lightgbm"
+
     def start(self, mode: str = "pcap", source: str = None):
         """
         Start the detection pipeline
@@ -161,19 +193,28 @@ class DetectionEngine:
             # 1.5 Initialize Flow Aggregator for flow-level detection
             if self.use_flow_aggregation:
                 flow_config = FlowAggregatorConfig(
-                    flow_timeout=120.0,        # Active timeout (for continuous attacks)
-                    idle_timeout=10.0,         # Idle timeout (for short attacks, triggers detection)10
-                    max_packets_per_flow=500,
-                    enable_bidirectional=True,
-                    tcp_flow_timeout=120.0,    # TCP flow timeout
-                    udp_flow_timeout=120.0,    # UDP flow timeout
-                    icmp_flow_timeout=120.0,   # ICMP flow timeout
-                    fin_immediate_close=True  # Disable FIN immediate close temporarily  Fasle
+                    flow_timeout=settings.FLOW_AGGREGATION_TIMEOUT,
+                    idle_timeout=settings.FLOW_IDLE_TIMEOUT,
+                    max_packets_per_flow=settings.FLOW_MAX_PACKETS,
+                    enable_bidirectional=settings.FLOW_ENABLE_BIDIRECTIONAL,
+                    tcp_flow_timeout=settings.FLOW_TCP_TIMEOUT,
+                    udp_flow_timeout=settings.FLOW_UDP_TIMEOUT,
+                    icmp_flow_timeout=settings.FLOW_ICMP_TIMEOUT,
+                    fin_immediate_close=True
                 )
                 self.flow_aggregator = FlowAggregator(flow_config)
                 self.flow_feature_extractor = FlowFeatureExtractor()
                 self.flow_aggregator.start()
-                logger.info("Flow aggregator initialized for flow-level detection with protocol-specific timeouts") 
+                logger.info(
+                    "Flow aggregator initialized: flow_timeout=%s idle_timeout=%s tcp=%s udp=%s icmp=%s max_packets=%s bidirectional=%s",
+                    settings.FLOW_AGGREGATION_TIMEOUT,
+                    settings.FLOW_IDLE_TIMEOUT,
+                    settings.FLOW_TCP_TIMEOUT,
+                    settings.FLOW_UDP_TIMEOUT,
+                    settings.FLOW_ICMP_TIMEOUT,
+                    settings.FLOW_MAX_PACKETS,
+                    settings.FLOW_ENABLE_BIDIRECTIONAL,
+                )
             
             # 2. Unload all existing models first, then load the selected model
             # This ensures only the selected model is used for inference
@@ -183,21 +224,7 @@ class DetectionEngine:
                 self.inference_engine.unload_model(model_name, version)
             
             # Determine model type from name
-            lower_name = self.current_model_name.lower()
-            if "fusion" in lower_name:
-                self.current_model_type = "fusion"
-            elif "xgb" in lower_name or "xgboost" in lower_name:
-                self.current_model_type = "xgboost"
-            elif "cnn" in lower_name:
-                self.current_model_type = "cnn"
-            elif "gru" in lower_name:
-                self.current_model_type = "gru"
-            elif "transformer" in lower_name:
-                self.current_model_type = "transformer"
-            elif "lightgbm" in lower_name:
-                self.current_model_type = "lightgbm"
-            else:
-                self.current_model_type = "lightgbm"
+            self.current_model_type = self._resolve_model_type(self.current_model_name, models_dir)
                 
             success = self.inference_engine.load_model(self.current_model_name, self.current_model_type)
             if not success:
@@ -206,10 +233,10 @@ class DetectionEngine:
                 self._queue_broadcast({"type": "status", "data": {"state": "error", "message": "Model load failed"}})
                 return
 
+
             # 3. Initialize SHAP (if enabled)
             if settings.ENABLE_SHAP:
                 # Need actual model object
-                model_key = f"{self.current_model_name}_latest"
                 if model_key in self.inference_engine.loaded_models:
                     model = self.inference_engine.loaded_models[model_key]
                     if model == "FUSION_META_MODEL":
@@ -229,8 +256,11 @@ class DetectionEngine:
             if mode == "pcap":
                 if not source:
                     source = settings.PCAP_FILE_PATH
-                # Use faster replay interval for large files (0.001s = 1000 pkts/s max)
-                self.capture = PcapReplayCapture(source, loop=True, interval=0.001)
+                self.capture = PcapReplayCapture(
+                    source,
+                    loop=True,
+                    interval=settings.PCAP_REPLAY_INTERVAL
+                )
             else:
                 if not source:
                     source = settings.NETWORK_INTERFACE
@@ -296,11 +326,12 @@ class DetectionEngine:
         
         batch_size = settings.BATCH_SIZE
         stats_interval = 1.0  # Send stats every 1 second
+        flow_check_interval = settings.FLOW_CHECK_INTERVAL
+        pipeline_idle_sleep = settings.PIPELINE_IDLE_SLEEP
         
         # Track completed flows for batch processing
         completed_flows = []
         last_flow_check = time.time()
-        flow_check_interval = 0.5  # Check for completed flows every 0.5s
         
         while not self.stop_event.is_set():
             try:
@@ -320,7 +351,7 @@ class DetectionEngine:
                     if self.use_flow_aggregation and self.flow_aggregator:
                         self._process_completed_flows(completed_flows)
                     self._maybe_send_stats()
-                    time.sleep(0.05)  # Shorter sleep for faster response
+                    time.sleep(pipeline_idle_sleep)
                     continue
                 
                 # 2. Process packets through flow aggregator (if enabled)
@@ -380,6 +411,17 @@ class DetectionEngine:
         
         for i, flow in enumerate(flows):
             try:
+                # [源头截断] 过滤系统背景噪声与残缺极小流
+                # 丢弃包数量低于配置阈值的微小流量，防止其因特征残缺被多分类模型强制归类误报
+                if flow.total_packets < settings.FLOW_MIN_PACKETS:
+                    logger.debug(
+                        f"Filtered background noise flow: {flow.flow_key.protocol} "
+                        f"{flow.flow_key.src_ip}:{flow.flow_key.src_port} -> "
+                        f"{flow.flow_key.dst_ip}:{flow.flow_key.dst_port}, "
+                        f"packets={flow.total_packets}, threshold={settings.FLOW_MIN_PACKETS}"
+                    )
+                    continue
+
                 # Log flow info
                 protocol = flow.flow_key.protocol
                 fwd_pkts = flow.fwd_packets
@@ -430,33 +472,8 @@ class DetectionEngine:
             
             if is_attack:
                 logger.warning(f"ATTACK DETECTED! Flow: {flow.flow_key.protocol} {flow.flow_key.src_ip}:{flow.flow_key.src_port} -&gt; {flow.flow_key.dst_ip}:{flow.flow_key.dst_port}, confidence={confidences[i]:.4f}")
-                # Determine attack type from model prediction
-                model_attack_type = predicted_types[i]
-                
-                # Fallback attack type mapping for numeric labels
-                fallback_attack_types = {
-                    "0": "Normal",
-                    "1": "DoS",
-                    "2": "DDoS",
-                    "3": "PortScan",
-                    "4": "WebAttack",
-                    "5": "BruteForce",
-                    "6": "Botnet",
-                    "7": "Infiltration",
-                    "8": "SQL Injection",
-                    "9": "XSS"
-                }
-                
-                # Check if it's a numeric label that needs mapping
-                if model_attack_type and model_attack_type.isdigit():
-                    model_attack_type = fallback_attack_types.get(model_attack_type, f"Attack {model_attack_type}")
-                
-                # Check if it's a specific attack type (not generic)
-                if model_attack_type and model_attack_type.lower() not in ["malicious", "malicious traffic", "normal", "benign", "0", "1"]:
-                    attack_type = model_attack_type
-                else:
-                    # Binary classification - use generic label but try to avoid generic fallback if we have a better one
-                    attack_type = model_attack_type if model_attack_type not in ["1", "0", None] else "Malicious Traffic"
+                # Prefer the exact label returned by the model; keep numeric ids generic
+                attack_type = self._resolve_attack_type_name(predicted_types[i])
                 
                 # Create packet_info from flow for alert
                 pkt_info = {
@@ -503,6 +520,29 @@ class DetectionEngine:
         """Classify attack type - uses model prediction only"""
         # No hard-coded rules - let the model determine the attack type
         return "Malicious Traffic"
+
+    def _resolve_attack_type_name(self, model_attack_type: Any) -> str:
+        """
+        Resolve the display name for an attack type.
+        Prefer real label names from model metadata; if the model only returns
+        a numeric class id, keep it generic instead of mislabeling it as DoS.
+        """
+        if model_attack_type is None:
+            return "Malicious Traffic"
+
+        normalized = str(model_attack_type).strip()
+        lowered = normalized.lower()
+
+        if lowered in {"normal", "benign", "0"}:
+            return "Normal"
+
+        if lowered in {"malicious", "malicious traffic", "attack", "1"}:
+            return "Malicious Traffic"
+
+        if normalized.isdigit():
+            return f"Class_{normalized}"
+
+        return normalized
     
     def _process_packets_directly(self, packets_data: List[Dict]):
         """Original packet-level processing (fallback when flow aggregation disabled)"""
@@ -545,31 +585,7 @@ class DetectionEngine:
             is_attack = pred == 1
             
             if is_attack:
-                # Determine attack type
-                model_attack_type = predicted_types[i]
-                
-                # Fallback attack type mapping for numeric labels
-                fallback_attack_types = {
-                    "0": "Normal",
-                    "1": "DoS",
-                    "2": "DDoS",
-                    "3": "PortScan",
-                    "4": "WebAttack",
-                    "5": "BruteForce",
-                    "6": "Botnet",
-                    "7": "Infiltration",
-                    "8": "SQL Injection",
-                    "9": "XSS"
-                }
-                
-                # Check if it's a numeric label that needs mapping
-                if model_attack_type and model_attack_type.isdigit():
-                    model_attack_type = fallback_attack_types.get(model_attack_type, f"Attack {model_attack_type}")
-                
-                if model_attack_type and model_attack_type.lower() not in ["malicious", "malicious traffic", "normal", "benign", "0", "1"]:
-                    attack_type = model_attack_type
-                else:
-                    attack_type = model_attack_type if model_attack_type not in ["1", "0", None] else "Malicious Traffic"
+                attack_type = self._resolve_attack_type_name(predicted_types[i])
 
                 prediction_result = {
                     "is_attack": True,
@@ -601,6 +617,9 @@ class DetectionEngine:
         """Helper to broadcast alert via WS safely using message queue"""
         # alert is an AlertModel object, access attributes directly
         from datetime import datetime
+
+        if getattr(alert, '_suppress_broadcast', False):
+            return
         
         # Get severity based on confidence
         confidence = getattr(alert, 'confidence', 0.5)
@@ -617,6 +636,9 @@ class DetectionEngine:
         timestamp = getattr(alert, 'timestamp', datetime.now())
         if isinstance(timestamp, datetime):
             timestamp = timestamp.isoformat()
+
+        raw_features = getattr(alert, 'raw_features', {}) or {}
+        event_meta = raw_features.get("event", {}) if isinstance(raw_features, dict) else {}
         
         alert_msg = {
             "type": "alert",
@@ -629,6 +651,12 @@ class DetectionEngine:
                 "attack_type": getattr(alert, 'attack_type', 'Unknown'),
                 "confidence": confidence,
                 "severity": severity,
+                "first_seen": event_meta.get("first_seen", timestamp),
+                "last_seen": event_meta.get("last_seen", timestamp),
+                "repeat_count": event_meta.get("repeat_count", 1),
+                "event_status": event_meta.get("status", "active"),
+                "duration_seconds": event_meta.get("duration_seconds", 0),
+                "event_action": getattr(alert, '_event_action', 'created'),
                 "shap_analysis": shap_data
             }
         }
