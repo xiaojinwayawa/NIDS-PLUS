@@ -5,7 +5,17 @@
 </template>
 
 <script setup lang="ts">
-// Main App Component
+import { onMounted } from 'vue'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
+
+onMounted(async () => {
+  // Automatically restore user info if token exists but user state is null (e.g., page refresh)
+  if (systemStore.isAuthenticated && !systemStore.user) {
+    await systemStore.fetchUserInfo()
+  }
+})
 </script>
 
 <style>

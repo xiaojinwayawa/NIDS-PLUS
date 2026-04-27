@@ -15,6 +15,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 from logging_config import app_logger as logger
+from ml.trainer import infer_dataset_type_from_paths
 
 
 # Get project root directory
@@ -404,13 +405,21 @@ class DeepLearningTrainer:
         X = df.drop(columns=[target_col])
         y = df[target_col]
         
-        # FEATURE SELECTION: Drop strong identifier features to prevent overfitting
-        # Note: 'Destination Port' is NO LONGER dropped. We keep all 78 features.
-        drop_cols = ['Source IP', 'Source Port', 'Destination IP', 'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1']
+        # 【核心修复】：强制特征对齐 (Feature Alignment)
+        from ml.flow_aggregator import FlowFeatureExtractor
+        expected_features = FlowFeatureExtractor().get_feature_names()
         
-        for col in drop_cols:
-            if col in X.columns:
-                X = X.drop(columns=[col])
+        # 清理列名前后的空格，防止脏数据列名导致对齐失败
+        X.columns = X.columns.str.strip()
+        
+        for col in expected_features:
+            if col not in X.columns:
+                X[col] = 0
+                logger.warning(f"Missing feature '{col}' in dataset, filled with 0 for alignment.")
+                
+        # 强制过滤并按标准顺序重排
+        X = X[expected_features]
+        logger.info(f"Deep Learning Feature alignment complete: Extracted exactly {len(expected_features)} standard features.")
         
         # Handle categorical features
         for col in X.select_dtypes(include=['object']).columns:
@@ -546,15 +555,17 @@ class DeepLearningTrainer:
             # Stage 4: Training (20% - 85%)
             class ProgressCallback(keras.callbacks.Callback):
                 def on_epoch_end(self, epoch, logs=None):
-                    progress_pct = 20 + int(((epoch + 1) / config.epochs) * 65)
-                    metrics = {
-                        "loss": float(logs.get('loss', 0)),
-                        "accuracy": float(logs.get('accuracy', 0)),
-                        "val_loss": float(logs.get('val_loss', 0)),
-                        "val_accuracy": float(logs.get('val_accuracy', 0))
-                    }
-                    update_progress("training", progress_pct, 100, 
-                                  f"Epoch {epoch + 1}/{config.epochs}", metrics)
+                    # Update progress every 5 epochs or on the last epoch
+                    if (epoch + 1) % 5 == 0 or (epoch + 1) == config.epochs:
+                        progress_pct = 20 + int(((epoch + 1) / config.epochs) * 65)
+                        metrics = {
+                            "loss": float(logs.get('loss', 0)),
+                            "accuracy": float(logs.get('accuracy', 0)),
+                            "val_loss": float(logs.get('val_loss', 0)),
+                            "val_accuracy": float(logs.get('val_accuracy', 0))
+                        }
+                        update_progress("training", progress_pct, 100, 
+                                      f"Epoch {epoch + 1}/{config.epochs}", metrics)
             
             early_stopping = keras.callbacks.EarlyStopping(
                 monitor='val_loss',
@@ -626,13 +637,20 @@ class DeepLearningTrainer:
             label_mapping = self._last_label_mapping or {
                 int(i): str(i) for i in sorted(np.unique(y))
             }
+            # Convert all keys to strings for JSON compatibility
+            # This ensures consistency when loading later
+            label_mapping_str = {
+                str(key): str(value)
+                for key, value in label_mapping.items()
+            }
             metadata = {
                 "name": model_name,
                 "type": model_type,
+                "dataset_type": getattr(config, "dataset_type", infer_dataset_type_from_paths(dataset_path)),
                 "framework": "tensorflow",
                 "input_dim": config.input_dim,
                 "num_classes": num_classes,
-                "label_mapping": label_mapping,
+                "label_mapping": label_mapping_str,
                 "config": {
                     "architecture_variant": (
                         "cnn_resattn" if model_type == "cnn_resattn" else model_type
@@ -847,6 +865,7 @@ class SequenceModelTrainer:
             json.dump({
                 "name": model_name,
                 "type": model_type,
+                "dataset_type": "CIC-IDS2017",
                 "framework": "tensorflow",
                 "sequence_length": sequence_length,
                 "feature_dim": feature_dim,

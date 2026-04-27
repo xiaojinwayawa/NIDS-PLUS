@@ -94,7 +94,7 @@
 
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
-            <el-button size="small" type="danger" @click="deleteModel(scope.row)">删除</el-button>
+            <el-button size="small" type="danger" @click="deleteModel(scope.row)" v-if="systemStore.user?.role === 'admin'">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -145,6 +145,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
 
 interface DatasetInfo { id: number; name: string; type: string; file_path?: string }
 interface TrainingProgress { stage: string; percent: number; message: string; elapsed: number; model_id?: number; metrics?: any }
@@ -203,12 +206,20 @@ const onModelTypeChange = (value: string[]) => {
 const loadData = async () => {
   loading.value = true
   try {
+    console.log('开始加载数据...')
     const [dsRes, mdRes] = await Promise.all([api.get('/datasets/'), api.get('/models/')])
+    console.log('数据集API返回:', dsRes)
+    console.log('模型API返回:', mdRes)
     datasets.value = dsRes.data
     models.value = mdRes.data
+    console.log('datasets赋值:', datasets.value)
+    console.log('models赋值:', models.value)
     ElMessage.success('数据加载成功')
   } catch (e: any) {
-    ElMessage.error('加载数据失败')
+    console.error('加载数据失败，详细错误:', e)
+    console.error('错误响应:', e.response?.data)
+    console.error('错误消息:', e.message)
+    ElMessage.error('加载数据失败: ' + (e.response?.data?.detail || e.message || '未知错误'))
   } finally {
     loading.value = false
   }

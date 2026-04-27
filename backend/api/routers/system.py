@@ -14,6 +14,7 @@ class SystemConfig(BaseModel):
     dataset_type: Optional[str] = None
     capture_mode: Optional[str] = "pcap" # pcap or live
     source: Optional[str] = None
+    enable_rule_correction: Optional[bool] = None
 
 class GlobalConfigUpdate(BaseModel):
     alert_threshold: Optional[float] = None
@@ -21,7 +22,6 @@ class GlobalConfigUpdate(BaseModel):
     enable_shap: Optional[bool] = None
     log_level: Optional[str] = None
     flow_min_packets: Optional[int] = None
-    multiclass_confidence_threshold: Optional[float] = None
     alert_event_cooldown_seconds: Optional[int] = None
     alert_event_resolve_timeout_seconds: Optional[int] = None
     flow_aggregation_timeout: Optional[float] = None
@@ -53,7 +53,6 @@ async def get_config(current_user: TokenData = Depends(get_current_user)):
         "enable_shap": settings.ENABLE_SHAP,
         "log_level": settings.LOG_LEVEL,
         "flow_min_packets": settings.FLOW_MIN_PACKETS,
-        "multiclass_confidence_threshold": settings.MULTICLASS_CONFIDENCE_THRESHOLD,
         "alert_event_cooldown_seconds": settings.ALERT_EVENT_COOLDOWN_SECONDS,
         "alert_event_resolve_timeout_seconds": settings.ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS,
         "flow_aggregation_timeout": settings.FLOW_AGGREGATION_TIMEOUT,
@@ -90,8 +89,6 @@ async def update_config(
         settings.LOG_LEVEL = config.log_level
     if config.flow_min_packets is not None:
         settings.FLOW_MIN_PACKETS = config.flow_min_packets
-    if config.multiclass_confidence_threshold is not None:
-        settings.MULTICLASS_CONFIDENCE_THRESHOLD = config.multiclass_confidence_threshold
     if config.alert_event_cooldown_seconds is not None:
         settings.ALERT_EVENT_COOLDOWN_SECONDS = config.alert_event_cooldown_seconds
     if config.alert_event_resolve_timeout_seconds is not None:
@@ -151,7 +148,7 @@ async def start_system(
     current_user: TokenData = Depends(get_current_user),
     engine: DetectionEngine = Depends(get_engine)
 ):
-    """Start detection engine"""
+    """Start the detection engine"""
     if engine.state == SystemState.RUNNING:
         raise HTTPException(status_code=400, detail="System already running")
     
@@ -167,7 +164,7 @@ async def stop_system(
     current_user: TokenData = Depends(get_current_user),
     engine: DetectionEngine = Depends(get_engine)
 ):
-    """Stop detection engine"""
+    """Stop the detection engine"""
     if engine.state == SystemState.STOPPED:
         return {"message": "System already stopped"}
         
@@ -199,6 +196,27 @@ async def get_interfaces(
         "interfaces": interfaces,
         "default": default_iface
     }
+
+
+# ============== Rule Correction Endpoints ==============
+
+@router.get("/rule-correction")
+async def get_rule_correction_status(
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Get rule correction status and loaded rules"""
+    return engine.rule_engine.get_rules_info()
+
+@router.put("/rule-correction")
+async def update_rule_correction(
+    enabled: bool,
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Enable or disable rule correction"""
+    engine.rule_engine.set_enabled(enabled)
+    return {"message": f"Rule correction {'enabled' if enabled else 'disabled'}", "enabled": enabled}
 
 
 # ============== Fusion Config Endpoints ==============

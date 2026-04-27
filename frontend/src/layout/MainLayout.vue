@@ -40,9 +40,14 @@
           </template>
           <el-menu-item index="/training">模型训练</el-menu-item>
           <el-menu-item index="/experiments">实验</el-menu-item>
-          <el-menu-item index="/performance">性能监控</el-menu-item>
+          <el-menu-item index="/model-evaluation">总体模型评估</el-menu-item>
           <el-menu-item index="/datasets">数据集</el-menu-item>
         </el-sub-menu>
+
+        <el-menu-item index="/copilot">
+          <el-icon><Star /></el-icon>
+          <span>智能辅助</span>
+        </el-menu-item>
         
         <el-menu-item index="/logs">
           <el-icon><Document /></el-icon>
@@ -52,6 +57,11 @@
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon>
           <span>设置</span>
+        </el-menu-item>
+
+        <el-menu-item index="/users">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -64,7 +74,7 @@
         <div class="header-right">
           <el-dropdown @command="handleCommand">
             <span class="el-dropdown-link">
-              管理员 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+              {{ systemStore.user?.username || '用户' }} <el-tag v-if="systemStore.user?.role === 'admin'" size="small" type="danger" style="margin: 0 5px;">超管</el-tag> <el-icon class="el-icon--right"><arrow-down /></el-icon>
             </span>
             <template #dropdown>
               <el-dropdown-menu>
@@ -91,7 +101,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSystemStore } from '@/stores/system'
 import { 
-  Odometer, Monitor, Warning, PieChart, Cpu, Document, Setting, ArrowDown 
+  Odometer, Monitor, Warning, PieChart, Cpu, Document, Setting, ArrowDown, Star, User 
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

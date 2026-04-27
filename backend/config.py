@@ -35,14 +35,13 @@ class Settings(BaseSettings):
     # Detection Engine
     BATCH_SIZE: int = 100
     INFERENCE_INTERVAL_MS: int = 50
-    ALERT_THRESHOLD: float = 0.8
+    ALERT_THRESHOLD: float = 0.5  # Confidence threshold for alert generation
     MAX_QUEUE_SIZE: int = 10000
     FLOW_MIN_PACKETS: int = 3
-    MULTICLASS_CONFIDENCE_THRESHOLD: float = 0.80
     ALERT_EVENT_COOLDOWN_SECONDS: int = 15
     ALERT_EVENT_RESOLVE_TIMEOUT_SECONDS: int = 30
     FLOW_AGGREGATION_TIMEOUT: float = 120.0
-    FLOW_IDLE_TIMEOUT: float = 5.0
+    FLOW_IDLE_TIMEOUT: float = 30.0
     FLOW_TCP_TIMEOUT: float = 120.0
     FLOW_UDP_TIMEOUT: float = 120.0
     FLOW_ICMP_TIMEOUT: float = 120.0
@@ -66,6 +65,11 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    # Moonshot / Compatible AI Copilot Settings
+    MOONSHOT_API_KEY: str = "sk-ciRklA1siCPWuE4Sm5XJSMkGCyZx71PozJnO9GcPltgiUJ4L"  # Please replace with your actual key
+    MOONSHOT_MODEL: str = "moonshot-v1-8k"
+    MOONSHOT_BASE_URL: str = "https://api.moonshot.cn/v1" # Can be changed to other OpenAI-compatible API endpoints
 
 
 settings = Settings()

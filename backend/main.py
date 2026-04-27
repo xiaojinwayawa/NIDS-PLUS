@@ -10,7 +10,7 @@ from logging_config import app_logger as logger
 from ml.detection_engine import DetectionEngine
 
 # Import Routers
-from api.routers import auth, system, alerts, stats, ws, datasets, logs, models, experiments
+from api.routers import auth, system, alerts, stats, ws, datasets, logs, models, experiments, copilot, users, model_evaluation
 
 # Create FastAPI application
 app = FastAPI(
@@ -42,6 +42,9 @@ app.include_router(datasets.router, prefix=f"{settings.API_V1_PREFIX}/datasets",
 app.include_router(logs.router, prefix=f"{settings.API_V1_PREFIX}/logs", tags=["Logs"])
 app.include_router(models.router, prefix=f"{settings.API_V1_PREFIX}/models", tags=["Models"])
 app.include_router(experiments.router, prefix=f"{settings.API_V1_PREFIX}/experiments", tags=["Experiments"])
+app.include_router(model_evaluation.router, prefix=f"{settings.API_V1_PREFIX}/model-evaluation", tags=["Model Evaluation"])
+app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["Users"])
+app.include_router(copilot.router, prefix=f"{settings.API_V1_PREFIX}", tags=["Copilot"])
 app.include_router(ws.router) # WebSocket
 
 @app.on_event("startup")

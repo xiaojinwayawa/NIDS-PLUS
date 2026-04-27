@@ -54,7 +54,7 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
-            <el-button size="small" type="danger" @click="deleteDataset(scope.row.id)">删除</el-button>
+            <el-button size="small" type="danger" @click="deleteDataset(scope.row.id)" v-if="systemStore.user?.role === 'admin'">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -67,6 +67,9 @@ import { ref, onMounted } from 'vue'
 import api from '@/api'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
 
 const datasets = ref<any[]>([])
 const uploadForm = ref({

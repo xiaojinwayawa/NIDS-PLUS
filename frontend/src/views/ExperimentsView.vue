@@ -6,12 +6,18 @@
         <h2>实验运行中</h2>
         <div class="progress-info">
           <p class="progress-message">{{ runningTask.message || '初始化中...' }}</p>
-          <el-progress 
-            :percentage="runningTask.progress" 
-            :status="runningTask.status === 'failed' ? 'exception' : (runningTask.status === 'completed' ? 'success' : '')"
-            :stroke-width="20" 
-            :text-inside="true" 
-          />
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <el-progress 
+              style="flex: 1;"
+              :percentage="runningTask.progress" 
+              :status="runningTask.status === 'failed' ? 'exception' : (runningTask.status === 'completed' ? 'success' : '')"
+              :stroke-width="20" 
+              :text-inside="true" 
+            />
+            <el-button type="danger" size="small" @click="stopExperimentTask" :disabled="runningTask.status === 'stopping' || runningTask.status === 'stopped'">
+              停止
+            </el-button>
+          </div>
         </div>
         <p class="warning-text">请勿关闭浏览器，您可以切换到其他模块，实验将在后台继续运行。</p>
       </el-card>
@@ -78,7 +84,7 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="scope">
             <el-button size="small" type="primary" @click="viewDetail(scope.row)">详情</el-button>
-            <el-button size="small" type="danger" @click="deleteExp(scope.row)">删除</el-button>
+            <el-button size="small" type="danger" @click="deleteExp(scope.row)" v-if="systemStore.user?.role === 'admin'">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -126,6 +132,18 @@
           />
           <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">
             开启后，系统会自动将人工标记的误报特征数据(FP)回流并注入到当前训练集中，进行过采样以增强第一级拦截模型的抗误报能力。
+          </div>
+        </el-form-item>
+
+        <el-form-item label="多分类模式">
+          <el-switch 
+            v-model="newExpForm.use_multiclass" 
+            active-text="开启 (保持原始攻击类型)" 
+            inactive-text="关闭 (二分类)"
+          />
+          <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">
+            关闭时：二分类模式（Normal vs Attack），追求极致拦截精度；<br/>
+            开启时：多分类模式（保留原始攻击类型如 DDoS/PortScan/Botnet 等），用于攻击类型定性分析实验。
           </div>
         </el-form-item>
       </el-form>
@@ -198,6 +216,9 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
 
 const experiments = ref<any[]>([])
 const showNewExperiment = ref(false)
@@ -211,7 +232,8 @@ const newExpForm = ref({
   fusion_strategy: 'weighted',
   dl_epochs: 50,
   cicids2017_files: [] as string[],
-  use_human_feedback: true
+  use_human_feedback: true,
+  use_multiclass: false
 })
 
 const runningTask = ref<{ id: string, status: string, progress: number, message: string } | null>(null)
@@ -353,6 +375,22 @@ const runExp = async () => {
   }
 }
 
+const stopExperimentTask = async () => {
+  if (!runningTask.value || runningTask.value.status !== 'running') return
+  try {
+    await ElMessageBox.confirm('确定要停止当前正在运行的实验任务吗？', '提示', { type: 'warning' })
+    runningTask.value.status = 'stopping'
+    runningTask.value.message = '正在请求停止任务...'
+    await api.post(`/experiments/task/${runningTask.value.id}/stop`)
+    ElMessage.success('已发送停止请求')
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('停止任务失败')
+      runningTask.value.status = 'running'
+    }
+  }
+}
+
 const startPollingTask = () => {
   if (taskPollInterval) clearInterval(taskPollInterval)
   
@@ -373,7 +411,7 @@ const startPollingTask = () => {
         message: data.message
       }
       
-      if (data.status === 'completed' || data.status === 'failed') {
+      if (data.status === 'completed' || data.status === 'failed' || data.status === 'stopped') {
         if (taskPollInterval) clearInterval(taskPollInterval)
         taskPollInterval = null
         saveExperimentTaskId(null)
@@ -381,6 +419,8 @@ const startPollingTask = () => {
         if (data.status === 'completed') {
           ElMessage.success('实验完成！')
           await loadExperiments()
+        } else if (data.status === 'stopped') {
+          ElMessage.warning('实验已被停止')
         } else {
           ElMessage.error(`实验失败: ${data.message}`)
         }

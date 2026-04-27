@@ -122,7 +122,7 @@ class AlertEngine:
             if preds and preds[0] == 1:
                 is_attack = True
             # Also alert on high confidence even if model says normal (for detection of Nmap scans)
-            elif confidence > 0.5:
+            elif confidence > settings.ALERT_THRESHOLD:
                 is_attack = True
                 
         if not is_attack:
@@ -177,7 +177,7 @@ class AlertEngine:
                     existing.raw_features = merged_raw_features
 
                     setattr(existing, "_event_action", "merged")
-                    setattr(existing, "_suppress_broadcast", delta_seconds < settings.ALERT_EVENT_COOLDOWN_SECONDS)
+                    setattr(existing, "_suppress_broadcast", False)
 
                     db.commit()
                     db.refresh(existing)

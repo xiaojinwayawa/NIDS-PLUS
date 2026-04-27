@@ -45,6 +45,29 @@ def clear_training_progress(task_id: str):
     if task_id in _training_progress:
         del _training_progress[task_id]
 
+
+def infer_dataset_type_from_paths(dataset_path_or_paths: str or List[str]) -> str:
+    """Infer dataset family from one or more dataset paths."""
+    if isinstance(dataset_path_or_paths, str):
+        paths = [dataset_path_or_paths]
+    else:
+        paths = list(dataset_path_or_paths or [])
+
+    normalized = [str(path).lower() for path in paths if path]
+    if not normalized:
+        return "Mixed"
+
+    has_cic = any("cic-ids2017" in path or "cic" in path or "balanced" in path for path in normalized)
+    has_nsl = any("nsl-kdd" in path or "kdd" in path for path in normalized)
+
+    if has_cic and not has_nsl:
+        return "CIC-IDS2017"
+    if has_nsl and not has_cic:
+        return "NSL-KDD"
+    if has_cic and has_nsl:
+        return "Mixed"
+    return "Mixed"
+
 def stop_training_task(task_id: str):
     """Signal a training task to stop"""
     _stop_flags[task_id] = True
@@ -162,15 +185,23 @@ class TrainingManager:
             X = df.drop(columns=[target_col])
             y = df[target_col]
             
-            # Note: 'Destination Port' is NO LONGER dropped. We keep all 78 features.
-            drop_cols = [
-                'Source IP', 'Source Port', 'Destination IP',
-                'Flow ID', 'Timestamp', 'Unnamed: 0', 'Fwd Header Length.1'
-            ]
-            for col in drop_cols:
-                if col in X.columns:
-                    X = X.drop(columns=[col])
-                    logger.info(f"Dropped strong identifier feature: {col}")
+            # 【核心修复】：强制特征对齐 (Feature Alignment)
+            # 获取实战推理时的 78 维标准特征列表
+            from ml.flow_aggregator import FlowFeatureExtractor
+            expected_features = FlowFeatureExtractor().get_feature_names()
+            
+            # 清理列名前后的空格，防止脏数据列名导致对齐失败
+            X.columns = X.columns.str.strip()
+            
+            # 1. 补齐缺失的列（用 0 填充）
+            for col in expected_features:
+                if col not in X.columns:
+                    X[col] = 0
+                    logger.warning(f"Missing feature '{col}' in dataset, filled with 0 for alignment.")
+            
+            # 2. 强制过滤并按标准顺序重排（丢弃 Protocol 等所有不在 78 维列表中的额外列）
+            X = X[expected_features]
+            logger.info(f"Feature alignment complete: Extracted exactly {len(expected_features)} standard features.")
             
             # Handle Label Encoding
             label_mapping = {}
@@ -242,6 +273,7 @@ class TrainingManager:
         
         # Create config from params
         config = DeepLearningConfig(model_type=model_type)
+        config.dataset_type = infer_dataset_type_from_paths(dataset_path_or_paths)
         if params:
             if "epochs" in params:
                 config.epochs = params["epochs"]
@@ -455,14 +487,20 @@ class TrainingManager:
             
             # Save Metadata
             meta_path = os.path.join(self.models_dir, f"{model_name}_meta.json")
+            # Convert all keys to strings for JSON compatibility
+            label_mapping_str = {
+                str(key): str(value)
+                for key, value in label_mapping.items()
+            }
             with open(meta_path, 'w') as f:
                 json.dump({
                     "name": model_name,
                     "type": model_type,
+                    "dataset_type": infer_dataset_type_from_paths(dataset_path_or_paths),
                     "params": params,
                     "metrics": metrics,
                     "timestamp": time.time(),
-                    "label_mapping": label_mapping,
+                    "label_mapping": label_mapping_str,
                     "num_classes": num_classes
                 }, f, indent=4)
             

@@ -371,6 +371,7 @@ class ExperimentRequest(BaseModel):
     transformer_num_blocks: int = 2
     fusion_strategy: str = "weighted"
     use_smote: bool = False
+    use_multiclass: bool = False  # Whether to use multiclass mode (default: binary)
 
 
 class DatasetFileInfo(BaseModel):
@@ -483,7 +484,8 @@ async def run_experiment(
                 transformer_num_heads=request.transformer_num_heads,
                 transformer_ff_dim=request.transformer_ff_dim,
                 transformer_num_blocks=request.transformer_num_blocks,
-                fusion_strategy=request.fusion_strategy
+                fusion_strategy=request.fusion_strategy,
+                is_multiclass=request.use_multiclass
             )
             
             # Map use_smote explicitly if added to ExperimentConfig in the future
@@ -515,6 +517,11 @@ async def run_experiment(
                 "training_time": result.training_time_sec
             }
             
+        except InterruptedError as e:
+            logger.warning(f"Experiment stopped: {e}")
+            _experiment_tasks[task_id]["status"] = "stopped"
+            _experiment_tasks[task_id]["message"] = "Experiment stopped by user"
+            _experiment_tasks[task_id]["progress"] = 0
         except Exception as e:
             logger.error(f"Experiment failed: {e}")
             _experiment_tasks[task_id]["status"] = "failed"
@@ -537,6 +544,25 @@ async def get_experiment_task_status(
         raise HTTPException(status_code=404, detail="Task not found")
     return _experiment_tasks[task_id]
 
+
+@router.post("/task/{task_id}/stop")
+async def stop_experiment_task(
+    task_id: str,
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Stop a running experiment task"""
+    if task_id not in _experiment_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    task = _experiment_tasks[task_id]
+    if task["status"] in ["completed", "failed", "stopped"]:
+        return {"message": "Task already finished"}
+        
+    task["stop_requested"] = True
+    task["message"] = "Stopping experiment..."
+    task["status"] = "stopped"
+    
+    return {"message": "Experiment stop requested"}
 
 @router.post("/{experiment_id}/promote")
 async def promote_experiment_model(
@@ -656,7 +682,28 @@ async def get_cicids2017_files(
                 })
             except Exception as e:
                 logger.warning(f"Error getting info for {filename}: {e}")
-    
+
+    # Scan balanced directory for CSV files
+    balanced_dir = os.path.join(_project_root, "data", "datasets", "balanced")
+    if os.path.exists(balanced_dir):
+        for filename in os.listdir(balanced_dir):
+            if filename.endswith('.csv'):
+                file_path = os.path.join(balanced_dir, filename)
+                try:
+                    size_mb = round(os.path.getsize(file_path) / (1024 * 1024), 2)
+                    
+                    # Try to get row count from DB if available, else estimate from file size (assuming ~200 bytes/row)
+                    estimated_rows = int(os.path.getsize(file_path) / 200)
+                    
+                    files_info.append({
+                        "filename": f"balanced/{filename}",
+                        "size_mb": size_mb,
+                        "estimated_rows": estimated_rows,
+                        "attack_types": ["Balanced"]
+                    })
+                except Exception as e:
+                    logger.warning(f"Error getting info for balanced/{filename}: {e}")
+
     # Sort files alphabetically
     files_info.sort(key=lambda x: x["filename"])
     

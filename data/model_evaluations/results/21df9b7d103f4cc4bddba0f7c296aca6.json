@@ -1,0 +1,94 @@
+{
+  "result_id": "21df9b7d103f4cc4bddba0f7c296aca6",
+  "task_id": "05d10cf763e24ef1a82b4c3736d4ec03",
+  "evaluation_name": "cascade_fusion",
+  "model_name": "Cascade_fusion",
+  "model_type": "fusion",
+  "dataset_type": "CIC-IDS2017",
+  "csv_display_name": "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv, Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv, Friday-WorkingHours-Morning.pcap_ISCX.csv, Monday-WorkingHours.pcap_ISCX.csv, Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv, Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv, Tuesday-WorkingHours.pcap_ISCX.csv, Wednesday-workingHours.pcap_ISCX.csv",
+  "source_keys": [
+    "preset:Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
+    "preset:Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv",
+    "preset:Friday-WorkingHours-Morning.pcap_ISCX.csv",
+    "preset:Monday-WorkingHours.pcap_ISCX.csv",
+    "preset:Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv",
+    "preset:Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv",
+    "preset:Tuesday-WorkingHours.pcap_ISCX.csv",
+    "preset:Wednesday-workingHours.pcap_ISCX.csv"
+  ],
+  "label_column": " Label",
+  "created_at": "2026-04-26T17:46:57.869793",
+  "summary": {
+    "accuracy": 0.973680761552709,
+    "precision": 0.9767567851562085,
+    "recall": 0.973680761552709,
+    "f1": 0.9742825313845551,
+    "macro_f1": 0.9603503273247593,
+    "macro_precision": 0.9411486620261261,
+    "macro_recall": 0.9834739669592674,
+    "fpr": 0.032686242602053495,
+    "fnr": 0.00036582347941166974,
+    "samples": 2830743,
+    "duration_seconds": 594.948445558548,
+    "throughput_rows_per_second": 4757.963519582691
+  },
+  "class_metrics": [
+    {
+      "label": "Normal",
+      "precision": 0.9999072306437193,
+      "recall": 0.9673137573979464,
+      "f1": 0.9833404850831791,
+      "support": 2273097
+    },
+    {
+      "label": "Attack",
+      "precision": 0.8823900934085329,
+      "recall": 0.9996341765205883,
+      "f1": 0.9373601695663396,
+      "support": 557646
+    }
+  ],
+  "confusion_matrix": {
+    "labels": [
+      "Normal",
+      "Attack"
+    ],
+    "matrix": [
+      [
+        2198798,
+        74299
+      ],
+      [
+        204,
+        557442
+      ]
+    ]
+  },
+  "binary_confusion_matrix": {
+    "labels": [
+      "Normal",
+      "Attack"
+    ],
+    "matrix": [
+      [
+        2198798,
+        74299
+      ],
+      [
+        204,
+        557442
+      ]
+    ]
+  },
+  "prediction_distribution": {
+    "Normal": 2199002,
+    "Attack": 631741
+  },
+  "benign_false_positive_analysis": [
+    {
+      "predicted_label": "Attack",
+      "count": 74299
+    }
+  ],
+  "export_path": null
+}

@@ -216,9 +216,10 @@ async def list_datasets(
             "name": d.name,
             "type": d.type,
             "sample_count": d.sample_count,
-            "created_at": d.created_at,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
             "description": d.description,
-            "source": "uploaded"
+            "source": "uploaded",
+            "file_path": d.file_path
         })
     
     # 2. Scan pre-existing dataset directories (CIC-IDS2017, NSL-KDD, etc.)
@@ -237,11 +238,9 @@ async def list_datasets(
                 # Get file info
                 try:
                     file_stat = os.stat(file_path)
-                    # Quick row count estimate (read first few lines)
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        # Count lines (approximate)
-                        sample_count = sum(1 for _ in f) - 1  # Subtract header
+                    sample_count = None  # 不统计行数避免超时
                 except:
+                    file_stat = None
                     sample_count = 0
                 
                 name = filename
@@ -284,7 +283,9 @@ async def delete_dataset(
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete a dataset"""
+    """Admin only: Delete a dataset"""
+    from auth import require_admin
+    await require_admin(current_user)
     dataset = db.query(DatasetModel).filter(DatasetModel.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")

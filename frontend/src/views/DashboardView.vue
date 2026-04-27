@@ -105,7 +105,7 @@
                 <div class="alert-info">
                   <span class="alert-type">
                     {{ alert.attack_type }}
-                    <span v-if="(alert.repeat_count || 1) > 1" class="alert-repeat">x{{ alert.repeat_count }}</span>
+                    <span class="alert-repeat" :class="{ 'alert-repeat-active': (alert.repeat_count || 1) > 1 }">x{{ alert.repeat_count || 1 }}</span>
                   </span>
                   <span class="alert-src">{{ alert.src_ip }}</span>
                 </div>
@@ -179,6 +179,16 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="规则矫正">
+          <el-switch
+            v-model="startForm.enableRuleCorrection"
+            active-text="启用"
+            inactive-text="关闭"
+          />
+          <div class="rule-hint">
+            启用后，在模型推理完成后应用专家规则矫正攻击类型分类（仅对多分类模型有效）
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -247,7 +257,8 @@ const availableModels = ref<ModelInfo[]>([])
 const startForm = reactive({
   mode: 'pcap',
   source: '',
-  model: 'lightgbm_cicids'
+  model: 'lightgbm_cicids',
+  enableRuleCorrection: false
 })
 
 const canStart = computed(() => {
@@ -441,8 +452,11 @@ const onModeChange = async (mode: string) => {
 
 const confirmStart = async () => {
   try {
-    // First configure the model
-    await api.post('/system/configure', { model_name: startForm.model })
+    // First configure the model and rule correction
+    await api.post('/system/configure', {
+      model_name: startForm.model,
+      enable_rule_correction: startForm.enableRuleCorrection
+    })
     // Then start the system
     await systemStore.startSystem(startForm.mode, startForm.source || undefined)
     ElMessage.success('系统启动命令已发送')
@@ -638,6 +652,12 @@ const formatTime = (ts: string) => {
 
 .alert-repeat {
   margin-left: 6px;
+  color: #909399;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.alert-repeat-active {
   color: #c0392b;
   font-weight: 700;
 }
@@ -651,5 +671,12 @@ const formatTime = (ts: string) => {
   font-size: 12px;
   color: #909399;
   margin-top: 5px;
+}
+
+.rule-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 5px;
+  line-height: 1.5;
 }
 </style>

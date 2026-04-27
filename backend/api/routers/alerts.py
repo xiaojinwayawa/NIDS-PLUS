@@ -371,7 +371,9 @@ async def batch_delete_alerts(
     current_user: TokenData = Depends(get_current_user),
     engine: DetectionEngine = Depends(get_engine)
 ):
-    """Batch delete alerts"""
+    """Admin only: Batch delete alerts"""
+    from auth import require_admin
+    await require_admin(current_user)
     from db.db_manager import SessionLocal
     from db.models import AlertModel
     
@@ -404,10 +406,12 @@ async def clear_all_alerts(
     current_user: TokenData = Depends(get_current_user),
     engine: DetectionEngine = Depends(get_engine)
 ):
-    """Clear all alerts"""
+    """Admin only: Clear all alerts"""
+    from auth import require_admin
     from db.db_manager import SessionLocal
     from db.models import AlertModel
-    
+
+    await require_admin(current_user)
     db = SessionLocal()
     try:
         # Find ALL FP alerts and remove their features first

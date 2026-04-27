@@ -36,6 +36,11 @@ const router = createRouter({
           component: () => import('../views/AttacksView.vue')
         },
         {
+          path: 'copilot',
+          name: 'copilot',
+          component: () => import('../views/CopilotView.vue')
+        },
+        {
           path: 'training',
           name: 'training',
           component: () => import('../views/TrainingView.vue')
@@ -46,9 +51,9 @@ const router = createRouter({
           component: () => import('../views/ExperimentsView.vue')
         },
         {
-          path: 'performance',
-          name: 'performance',
-          component: () => import('../views/PerformanceView.vue')
+          path: 'model-evaluation',
+          name: 'model-evaluation',
+          component: () => import('../views/ModelEvaluationView.vue')
         },
         {
           path: 'datasets',
@@ -59,6 +64,11 @@ const router = createRouter({
           path: 'logs',
           name: 'logs',
           component: () => import('../views/LogsView.vue')
+        },
+        {
+          path: 'users',
+          name: 'users',
+          component: () => import('../views/UsersView.vue')
         },
         {
           path: 'settings',

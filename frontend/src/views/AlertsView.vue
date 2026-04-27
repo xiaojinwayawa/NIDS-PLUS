@@ -23,8 +23,8 @@
           </template>
         </el-dropdown>
 
-        <el-button type="danger" :disabled="selectedAlerts.length === 0" @click="handleBatchDelete">删除选中 ({{ selectedAlerts.length }})</el-button>
-        <el-button type="danger" plain @click="handleDeleteAll">全部清空</el-button>
+        <el-button type="danger" :disabled="selectedAlerts.length === 0" @click="handleBatchDelete" v-if="systemStore.user?.role === 'admin'">删除选中 ({{ selectedAlerts.length }})</el-button>
+        <el-button type="danger" plain @click="handleDeleteAll" v-if="systemStore.user?.role === 'admin'">全部清空</el-button>
       </div>
     </div>
 
@@ -88,7 +88,7 @@
               <el-button size="small" type="warning" :disabled="scope.row.is_false_positive" @click="markFalsePositive(scope.row.id)">
                 {{ scope.row.is_false_positive ? '已标记' : '标记误报' }}
               </el-button>
-              <el-button size="small" type="danger" @click="deleteAlert(scope.row.id)">删除</el-button>
+              <el-button size="small" type="danger" @click="deleteAlert(scope.row.id)" v-if="systemStore.user?.role === 'admin'">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -149,7 +149,7 @@
                 <div style="display: flex; gap: 8px;">
                   <el-button size="small" type="primary" @click="openDetail(scope.row.id)">详情</el-button>
                   <el-button size="small" type="warning" @click="unmarkFalsePositive(scope.row.id)">取消误报</el-button>
-                  <el-button size="small" type="danger" @click="deleteAlert(scope.row.id)">删除</el-button>
+                  <el-button size="small" type="danger" @click="deleteAlert(scope.row.id)" v-if="systemStore.user?.role === 'admin'">删除</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -186,7 +186,7 @@
                 </el-table-column>
                 <el-table-column label="操作" width="80">
                   <template #default="scope">
-                    <el-button size="small" type="danger" text @click="deleteRule(scope.row.rule_id)">删除</el-button>
+                    <el-button size="small" type="danger" text @click="deleteRule(scope.row.rule_id)" v-if="systemStore.user?.role === 'admin'">删除</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -280,6 +280,9 @@
 import { ref, computed, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
 
 const AlertShapChart = defineAsyncComponent(() => import('@/components/AlertShapChart.vue'))
 

@@ -21,6 +21,7 @@ from ml.inference_engine import InferenceEngine
 from ml.alert_engine import AlertEngine
 from ml.shap_analyzer import SHAPAnalyzer
 from ml.flow_aggregator import FlowAggregator, FlowAggregatorConfig, FlowFeatureExtractor, FlowState
+from ml.rule_engine import RuleEngine
 from typing import Optional, Dict, Any, List
 
 class SystemState(enum.Enum):
@@ -53,6 +54,7 @@ class DetectionEngine:
         self.inference_engine = InferenceEngine()
         self.alert_engine = AlertEngine()
         self.shap_analyzer = SHAPAnalyzer()
+        self.rule_engine = RuleEngine()
         
         # Flow aggregation for flow-level detection (SYN flood, etc.)
         self.flow_aggregator: Optional[FlowAggregator] = None
@@ -105,8 +107,10 @@ class DetectionEngine:
             self.current_model_name = config["model_name"]
         if "dataset_type" in config:
             self.dataset_type = config["dataset_type"]
+        if "enable_rule_correction" in config:
+            self.rule_engine.set_enabled(config["enable_rule_correction"])
             
-        logger.info(f"Engine configured: model={self.current_model_name}, dataset={self.dataset_type}")
+        logger.info(f"Engine configured: model={self.current_model_name}, dataset={self.dataset_type}, rule_correction={self.rule_engine.is_enabled()}")
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
         """Set the main event loop for async operations from threads"""
@@ -447,13 +451,29 @@ class DetectionEngine:
         
         X_batch = np.array(features_batch)
         
-        # Run inference
+        # Run inference using only the currently active model
         inference_start = time.time()
-        results = self.inference_engine.predict_batch(X_batch)
+        results = self.inference_engine.predict_batch(X_batch, model_names=[self.current_model_name])
         predictions = results["predictions"]
         confidences = results["confidences"]
         predicted_types = results.get("attack_types", ["Malicious Traffic"] * len(predictions))
         inference_time = (time.time() - inference_start) * 1000
+        
+        # Apply rule correction if enabled (post-inference attack type correction)
+        if self.rule_engine.is_enabled():
+            flow_infos = []
+            for flow in valid_flows:
+                flow_infos.append({
+                    "src_ip": flow.flow_key.src_ip,
+                    "dst_ip": flow.flow_key.dst_ip,
+                    "src_port": flow.flow_key.src_port,
+                    "dst_port": flow.flow_key.dst_port,
+                    "protocol": flow.flow_key.protocol,
+                })
+            corrected_types, applied_rules = self.rule_engine.correct_batch(
+                X_batch, predicted_types, flow_infos
+            )
+            predicted_types = corrected_types
         
         # Log detection summary
         attack_count = sum(1 for p in predictions if p == 1)
@@ -471,9 +491,15 @@ class DetectionEngine:
             is_attack = pred == 1
             
             if is_attack:
-                logger.warning(f"ATTACK DETECTED! Flow: {flow.flow_key.protocol} {flow.flow_key.src_ip}:{flow.flow_key.src_port} -&gt; {flow.flow_key.dst_ip}:{flow.flow_key.dst_port}, confidence={confidences[i]:.4f}")
                 # Prefer the exact label returned by the model; keep numeric ids generic
                 attack_type = self._resolve_attack_type_name(predicted_types[i])
+                
+                # Skip alert generation if model classifies traffic as Normal
+                # This prevents false alerts when multiclass models are used for binary detection
+                if attack_type == "Normal":
+                    continue
+                
+                logger.warning(f"ATTACK DETECTED! Flow: {flow.flow_key.protocol} {flow.flow_key.src_ip}:{flow.flow_key.src_port} -&gt; {flow.flow_key.dst_ip}:{flow.flow_key.dst_port}, confidence={confidences[i]:.4f}")
                 
                 # Create packet_info from flow for alert
                 pkt_info = {
@@ -568,9 +594,9 @@ class DetectionEngine:
         if X_batch.ndim == 3:
             X_batch = X_batch.squeeze(1)
         
-        # Inference
+        # Inference using only the currently active model
         inference_start = time.time()
-        results = self.inference_engine.predict_batch(X_batch)
+        results = self.inference_engine.predict_batch(X_batch, model_names=[self.current_model_name])
         predictions = results["predictions"]
         confidences = results["confidences"]
         predicted_types = results.get("attack_types", ["Malicious"] * len(predictions))
@@ -586,6 +612,10 @@ class DetectionEngine:
             
             if is_attack:
                 attack_type = self._resolve_attack_type_name(predicted_types[i])
+
+                # Skip alert generation if model classifies traffic as Normal
+                if attack_type == "Normal":
+                    continue
 
                 prediction_result = {
                     "is_attack": True,
@@ -640,6 +670,11 @@ class DetectionEngine:
         raw_features = getattr(alert, 'raw_features', {}) or {}
         event_meta = raw_features.get("event", {}) if isinstance(raw_features, dict) else {}
         
+        # Ensure repeat_count is explicitly extracted and has a default
+        repeat_count = event_meta.get("repeat_count", 1)
+        if repeat_count is None:
+            repeat_count = 1
+        
         alert_msg = {
             "type": "alert",
             "data": {
@@ -653,7 +688,7 @@ class DetectionEngine:
                 "severity": severity,
                 "first_seen": event_meta.get("first_seen", timestamp),
                 "last_seen": event_meta.get("last_seen", timestamp),
-                "repeat_count": event_meta.get("repeat_count", 1),
+                "repeat_count": int(repeat_count),
                 "event_status": event_meta.get("status", "active"),
                 "duration_seconds": event_meta.get("duration_seconds", 0),
                 "event_action": getattr(alert, '_event_action', 'created'),
@@ -732,7 +767,8 @@ class DetectionEngine:
             "state": self.state.value,
             "model": self.current_model_name,
             "dataset": self.dataset_type,
-            "models_loaded": list(self.inference_engine.loaded_models.keys())
+            "models_loaded": list(self.inference_engine.loaded_models.keys()),
+            "rule_correction_enabled": self.rule_engine.is_enabled()
         }
     
     def _collect_packet_stats(self, pkt: Dict[str, Any]):

@@ -11,7 +11,7 @@ import threading
 from auth import get_current_user, TokenData
 from db.db_manager import get_db, SessionLocal
 from db.models import ModelModel, ModelMetricModel, DatasetModel
-from ml.trainer import TrainingManager, get_training_progress, set_training_progress, clear_training_progress
+from ml.trainer import TrainingManager, get_training_progress, set_training_progress, clear_training_progress, infer_dataset_type_from_paths
 from ml.detection_engine import DetectionEngine
 from config import settings
 from logging_config import app_logger as logger
@@ -276,8 +276,8 @@ async def list_models(
             "file_path": m.file_path,
             "dataset_type": m.dataset_type,
             "is_active": m.is_active,
-            "created_at": m.created_at,
-            "trained_at": m.trained_at,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "trained_at": m.trained_at.isoformat() if m.trained_at else None,
             "source": "database",
             "metrics": {
                 "accuracy": getattr(metric, "accuracy", None),
@@ -389,6 +389,7 @@ async def train_model(
     # Collect all dataset file paths
     dataset_files = []
     dataset_type = None
+    dataset_types_seen = set()
     
     # Get project root for resolving paths
     current_file = os.path.abspath(__file__)
@@ -406,6 +407,8 @@ async def train_model(
                 raise HTTPException(status_code=404, detail="Dataset not found")
             dataset_files.append(d.file_path)
             dataset_type = d.type
+            if d.type:
+                dataset_types_seen.add(str(d.type))
         else:
             # Preset dataset - dataset_path should be provided by frontend
             if not dataset_path:
@@ -423,6 +426,8 @@ async def train_model(
                 dataset_files.append(d.file_path)
                 if dataset_type is None:
                     dataset_type = d.type
+                if d.type:
+                    dataset_types_seen.add(str(d.type))
             else:
                 # Preset dataset - try to find it in dataset_paths or scan
                 if dataset_paths and len(dataset_paths) > len(dataset_files):
@@ -460,6 +465,17 @@ async def train_model(
     if len(dataset_files) == 0:
         raise HTTPException(status_code=400, detail="No dataset files found")
 
+    normalized_dataset_types = {value.strip().lower() for value in dataset_types_seen if str(value).strip()}
+    if normalized_dataset_types:
+        if all("cic" in value for value in normalized_dataset_types):
+            dataset_type = "CIC-IDS2017"
+        elif all("kdd" in value for value in normalized_dataset_types):
+            dataset_type = "NSL-KDD"
+        else:
+            dataset_type = "Mixed"
+    elif dataset_type is None:
+        dataset_type = infer_dataset_type_from_paths(dataset_files)
+
     if not model_name:
         model_name = f"{model_type}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
@@ -481,23 +497,38 @@ async def train_model(
         nonlocal dataset_type
         try:
             tm = TrainingManager()
-            params = {"use_smote": use_smote}
+            params = {"use_smote": use_smote, "dataset_type": dataset_type}
             metrics = tm.train_model(model_type, dataset_files, params=params, model_name=model_name, task_id=task_id, epochs=epochs)
             
             # Save to database using a new session
             db_session = SessionLocal()
             try:
-                file_path = os.path.join("models", f"{model_name}.joblib")
+                # 根据模型类型选择正确的文件后缀
+                if model_type in ["cnn", "cnn_resattn", "gru", "transformer"]:
+                    file_path = os.path.join("models", f"{model_name}.h5")
+                else:
+                    file_path = os.path.join("models", f"{model_name}.joblib")
                 
                 # Determine dataset type if not set
                 if dataset_type is None:
-                    first_path = dataset_files[0]
-                    if 'NSL-KDD' in first_path or 'KDD' in first_path:
+                    first_path = dataset_files[0].lower()
+                    if 'nsl-kdd' in first_path or 'kdd' in first_path:
                         dataset_type = 'NSL-KDD'
-                    elif 'CIC-IDS2017' in first_path or 'CIC' in first_path:
+                    elif 'cic-ids2017' in first_path or 'cic' in first_path or 'balanced' in first_path:
                         dataset_type = 'CIC-IDS2017'
                     else:
                         dataset_type = 'Mixed'
+
+                meta_path = os.path.join(project_root, "models", f"{model_name}_meta.json")
+                if os.path.exists(meta_path):
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as meta_file:
+                            meta = json.load(meta_file)
+                        meta["dataset_type"] = dataset_type
+                        with open(meta_path, "w", encoding="utf-8") as meta_file:
+                            json.dump(meta, meta_file, indent=4, ensure_ascii=False)
+                    except Exception:
+                        logger.warning("Failed to backfill dataset_type into metadata for %s", model_name, exc_info=True)
                 
                 model = ModelModel(
                     name=model_name,
@@ -599,38 +630,6 @@ async def stop_training(
     return {"message": "Training stopped"}
 
 
-
-@router.get("/metrics", response_model=List[dict])
-async def list_model_metrics(
-    model_id: Optional[int] = None,
-    hours: int = 24,
-    current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    List model metrics time series for charts
-    """
-    since = datetime.utcnow() - timedelta(hours=hours)
-    q = db.query(ModelMetricModel).filter(ModelMetricModel.timestamp >= since)
-    if model_id:
-        q = q.filter(ModelMetricModel.model_id == model_id)
-    q = q.order_by(ModelMetricModel.timestamp.asc())
-    rows = q.all()
-    return [
-        {
-            "model_id": r.model_id,
-            "timestamp": r.timestamp,
-            "accuracy": r.accuracy,
-            "precision": r.precision_score,
-            "recall": r.recall,
-            "f1": r.f1_score,
-            "fpr": r.false_positive_rate,
-            "fnr": r.false_negative_rate,
-            "inference_time_ms": r.inference_time_ms
-        } for r in rows
-    ]
-
-
 @router.delete("/{model_id}")
 async def delete_model(
     model_id: int,
@@ -639,8 +638,11 @@ async def delete_model(
     engine: DetectionEngine = Depends(get_engine)
 ):
     """
-    Delete a model from database and optionally from disk
+    Admin only: Delete a model from database and optionally from disk
     """
+    from auth import require_admin
+    await require_admin(current_user)
+    
     if model_id > 0:
         # Database model
         m = db.query(ModelModel).filter(ModelModel.id == model_id).first()
@@ -847,6 +849,7 @@ async def upload_model(
         raise HTTPException(status_code=500, detail=f"Failed to save model to database: {str(e)}")
 
 
+
 @router.post("/import/{model_name}")
 async def import_local_model(
     model_name: str,
@@ -947,5 +950,30 @@ async def import_local_model(
         }
         
     except Exception as e:
+        logger.error(f"Error saving imported model to DB: {str(e)}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to save model to database: {str(e)}")
+
+@router.delete("/import/{model_name}")
+async def delete_imported_model(
+    model_name: str,
+    current_user: TokenData = Depends(get_current_user),
+    engine: DetectionEngine = Depends(get_engine)
+):
+    """Admin only: Delete an imported model from disk"""
+    from auth import require_admin
+    await require_admin(current_user)
+    
+    try:
+        from config import settings
+        import os
+        model_dir = os.path.join(settings.MODELS_DIR, "imported")
+        model_path = os.path.join(model_dir, model_name)
+        if os.path.exists(model_path):
+            os.remove(model_path)
+            return {"message": "Model deleted"}
+        return {"message": "Model not found"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+

@@ -73,7 +73,7 @@ import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const config = ref({
-  alert_threshold: 0.8,
+  alert_threshold: 0.5,
   batch_size: 100,
   enable_shap: true,
   log_level: 'INFO'

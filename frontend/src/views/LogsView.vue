@@ -25,6 +25,7 @@
                   type="danger" 
                   text 
                   @click.stop="deleteLogFile(scope.row.name)"
+                  v-if="systemStore.user?.role === 'admin'"
                 >
                   删除
                 </el-button>
@@ -39,7 +40,7 @@
             <div class="content-header">
               <span>内容: {{ currentFile || '—' }}</span>
               <el-button 
-                v-if="currentFile"
+                v-if="currentFile && systemStore.user?.role === 'admin'"
                 size="small" 
                 type="danger" 
                 text 
@@ -60,6 +61,9 @@
 import { ref, onMounted } from 'vue'
 import api from '@/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useSystemStore } from '@/stores/system'
+
+const systemStore = useSystemStore()
 
 const files = ref<Array<{name:string}>>([])
 const currentFile = ref<string | null>(null)

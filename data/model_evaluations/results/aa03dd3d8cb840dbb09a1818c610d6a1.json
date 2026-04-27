@@ -1,0 +1,94 @@
+{
+  "result_id": "aa03dd3d8cb840dbb09a1818c610d6a1",
+  "task_id": "6b23e8eeeaf44d3eb728323c0c955a86",
+  "evaluation_name": "fus_allkinds_fus",
+  "model_name": "fusion_allkinds_fusion",
+  "model_type": "fusion",
+  "dataset_type": "CIC-IDS2017",
+  "csv_display_name": "Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv, Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv, Friday-WorkingHours-Morning.pcap_ISCX.csv, Monday-WorkingHours.pcap_ISCX.csv, Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv, Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv, Tuesday-WorkingHours.pcap_ISCX.csv, Wednesday-workingHours.pcap_ISCX.csv",
+  "source_keys": [
+    "preset:Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
+    "preset:Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv",
+    "preset:Friday-WorkingHours-Morning.pcap_ISCX.csv",
+    "preset:Monday-WorkingHours.pcap_ISCX.csv",
+    "preset:Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv",
+    "preset:Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv",
+    "preset:Tuesday-WorkingHours.pcap_ISCX.csv",
+    "preset:Wednesday-workingHours.pcap_ISCX.csv"
+  ],
+  "label_column": " Label",
+  "created_at": "2026-04-25T14:11:34.939806",
+  "summary": {
+    "accuracy": 0.9770000314405087,
+    "precision": 0.9793822966762279,
+    "recall": 0.9770000314405087,
+    "f1": 0.9774646446121175,
+    "macro_f1": 0.9651484001195204,
+    "macro_precision": 0.9478070391477579,
+    "macro_recall": 0.9855454873685945,
+    "fpr": 0.02855575454984983,
+    "fnr": 0.0003532707129612693,
+    "samples": 2830743,
+    "duration_seconds": 585.0802192687988,
+    "throughput_rows_per_second": 4838.213473594625
+  },
+  "class_metrics": [
+    {
+      "label": "Normal",
+      "precision": 0.9999107944995074,
+      "recall": 0.9714442454501502,
+      "f1": 0.9854719901746767,
+      "support": 2273097
+    },
+    {
+      "label": "Attack",
+      "precision": 0.8957032837960084,
+      "recall": 0.9996467292870387,
+      "f1": 0.9448248100643641,
+      "support": 557646
+    }
+  ],
+  "confusion_matrix": {
+    "labels": [
+      "Normal",
+      "Attack"
+    ],
+    "matrix": [
+      [
+        2208187,
+        64910
+      ],
+      [
+        197,
+        557449
+      ]
+    ]
+  },
+  "binary_confusion_matrix": {
+    "labels": [
+      "Normal",
+      "Attack"
+    ],
+    "matrix": [
+      [
+        2208187,
+        64910
+      ],
+      [
+        197,
+        557449
+      ]
+    ]
+  },
+  "prediction_distribution": {
+    "Normal": 2208384,
+    "Attack": 622359
+  },
+  "benign_false_positive_analysis": [
+    {
+      "predicted_label": "Attack",
+      "count": 64910
+    }
+  ],
+  "export_path": "C:\\SpaceB\\nids-system\\data\\model_evaluations\\exports\\fus_allkinds_fus_aa03dd3d8cb840dbb09a1818c610d6a1.xlsx"
+}

@@ -1,0 +1,82 @@
+{
+  "experiment_id": "fusion_allkinds_5e643ae7_1777061962",
+  "config": {
+    "experiment_name": "fusion_allkinds",
+    "dataset_type": "cic-ids2017",
+    "model_types": [
+      "lightgbm",
+      "cnn"
+    ],
+    "random_seed": 42,
+    "test_size": 0.2,
+    "ml_num_boost_round": 100,
+    "ml_early_stopping": 10,
+    "dl_epochs": 50,
+    "dl_batch_size": 64,
+    "dl_learning_rate": 0.001,
+    "transformer_num_heads": 4,
+    "transformer_ff_dim": 128,
+    "transformer_num_blocks": 2,
+    "fusion_strategy": "weighted",
+    "use_focal_loss": true,
+    "use_class_weights": true,
+    "use_one_hot": true,
+    "use_human_feedback": true,
+    "human_feedback_oversample_rate": 100
+  },
+  "timestamp": "2026-04-25T05:35:27.805944",
+  "metrics": {
+    "accuracy": 0.99927,
+    "precision": 0.9993409845442224,
+    "recall": 0.9997512128374176,
+    "f1_score": 0.9995460565999017,
+    "fpr": 0.002702702702702703,
+    "fnr": 0.00024878716258241074
+  },
+  "performance": {
+    "training_time_sec": 4553.256244659424,
+    "inference_time_ms": 2.016782760620117,
+    "throughput_samples_per_sec": 49583922.44946211
+  },
+  "model_results": {
+    "lightgbm": {
+      "accuracy": 0.99933,
+      "precision": 0.9994155464640561,
+      "recall": 0.9997512128374176,
+      "f1": 0.9995833514710181,
+      "fpr": 0.00239673635900051,
+      "fnr": 0.00024878716258241074
+    },
+    "cnn": {
+      "accuracy": 0.99331,
+      "precision": 0.9974541052552759,
+      "recall": 0.9942156984699589,
+      "f1": 0.9958322690771809,
+      "fpr": 0.010402855685874554,
+      "fnr": 0.00578430153004105
+    },
+    "fusion": {
+      "accuracy": 0.99927,
+      "precision": 0.9993409845442224,
+      "recall": 0.9997512128374176,
+      "f1": 0.9995460565999017,
+      "fpr": 0.002702702702702703,
+      "fnr": 0.00024878716258241074
+    }
+  },
+  "model_paths": {
+    "lightgbm": "models/experiments/fusion_allkinds_5e643ae7_1777061962/lightgbm.joblib",
+    "cnn": "models/experiments/fusion_allkinds_5e643ae7_1777061962/cnn.keras",
+    "fusion": "models/experiments/fusion_allkinds_5e643ae7_1777061962/fusion.joblib"
+  },
+  "confusion_matrix": [
+    [
+      19557,
+      53
+    ],
+    [
+      20,
+      80370
+    ]
+  ]
+}

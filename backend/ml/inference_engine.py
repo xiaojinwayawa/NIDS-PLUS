@@ -448,16 +448,12 @@ class InferenceEngine:
         probs = None
         
         if model_type == "lightgbm":
-            # Check if multiclass
-            is_multiclass = False
-            if hasattr(model, "params") and model.params.get("objective") == "multiclass":
-                is_multiclass = True
-            
             if hasattr(model, "predict_proba"):
-                if is_multiclass:
-                     probs = model.predict_proba(features)
+                full_probs = model.predict_proba(features)
+                if full_probs.ndim > 1 and full_probs.shape[1] > 2:
+                    probs = full_probs  # Return all classes for multiclass
                 else:
-                     probs = model.predict_proba(features)[:, 1]
+                    probs = full_probs[:, 1]  # Binary, return attack class probability
             else:
                 raw_pred = model.predict(features)
                 # LightGBM predict returns raw probs for binary or array for multiclass
@@ -503,10 +499,23 @@ class InferenceEngine:
         """Run inference on a deep learning model"""
         # Apply scaler if available
         if model_name in self.model_scalers:
+            logger.debug(f"Applying scaler for DL model {model_name}")
             features = self.model_scalers[model_name].transform(features)
+        else:
+            logger.warning(f"No scaler found for DL model {model_name}! This may cause incorrect predictions.")
         
         # Predict
         predictions = model.predict(features, verbose=0)
+        
+        # Log prediction info for debugging
+        logger.debug(f"DL model {model_name} predictions shape: {predictions.shape}")
+        if predictions.size > 0:
+            # Log min/max/mean of predictions to detect issues
+            if predictions.ndim > 1:
+                for i in range(min(5, predictions.shape[1])):
+                    logger.debug(f"  Class {i} probs: min={predictions[:, i].min():.4f}, max={predictions[:, i].max():.4f}, mean={predictions[:, i].mean():.4f}")
+            else:
+                logger.debug(f"  Binary probs: min={predictions.min():.4f}, max={predictions.max():.4f}, mean={predictions.mean():.4f}")
         
         # Handle output shape
         if predictions.ndim > 1 and predictions.shape[1] > 1:
@@ -524,167 +533,173 @@ class InferenceEngine:
         if not model_results:
             return [0] * n_samples, [0.0] * n_samples, ["Normal"] * n_samples
         
-        # Current simplified strategy: 
-        # If we have multi-class results, prioritize them.
-        # Otherwise fall back to standard fusion.
+        # NOTE: Experiment module only produces binary models. 
+        # Multi-class fusion is not fully supported yet. 
+        # Removed the buggy short-circuit that overrides the fusion strategy
+        # if a multi-class model is found. All fusion now strictly follows the strategy.
+
+        predictions = []
+        confidences = []
         
-        # Check if we have any multi-class results
-        multiclass_models = []
+        # Extract binary probabilities from all models
+        # For multiclass models, compute attack probability by excluding the Normal class
+        binary_probs = {}
         for key, probs in model_results.items():
             if probs.ndim > 1 and probs.shape[1] > 1:
-                multiclass_models.append(key)
-        
-        if multiclass_models:
-            # Use the first multi-class model found (simple strategy for now)
-            # In future: could average probabilities across multi-class models
-            primary_key = multiclass_models[0]
-            probs = model_results[primary_key]
-            
-            # Get class indices
-            class_indices = np.argmax(probs, axis=1)
-            confidences = np.max(probs, axis=1).tolist()
-            
-            # Get label mapping if available
-            label_mapping = {}
-            if "label_mapping" in self.model_metadata[primary_key]:
-                label_mapping = self.model_metadata[primary_key]["label_mapping"]
-                # Convert string keys to int if necessary
-                label_mapping = {int(k): v for k, v in label_mapping.items()}
-            
-            attack_types = []
-            predictions = []
-            
-            for idx, conf in zip(class_indices, confidences):
-                label = label_mapping.get(idx, str(idx))
+                # Multiclass model: find Normal class index and compute attack probability
+                meta = self.model_metadata.get(key, {})
+                label_mapping = meta.get("label_mapping", {})
                 
-                is_benign = label.lower() in ["benign", "normal", "0"]
+                normal_idx = None
+                for idx_str, label in label_mapping.items():
+                    if label.lower() in ["normal", "benign"]:
+                        normal_idx = int(idx_str)
+                        break
                 
-                # [末端兜底] 缓解多分类 argmax 强制归类效应
-                # 如果模型判断为攻击，但置信度低于阈值，则强制降级为正常流量 (避免背景噪声引发强告警)
-                if not is_benign and conf < settings.MULTICLASS_CONFIDENCE_THRESHOLD:
-                    logger.debug(
-                        f"Confidence buffer triggered: Overriding {label} "
-                        f"(conf: {conf:.4f}, threshold: {settings.MULTICLASS_CONFIDENCE_THRESHOLD:.4f}) "
-                        f"to Normal"
-                    )
-                    label = "Normal"
-                    is_benign = True
-                    
-                attack_types.append(label)
-                
-                # Determine binary prediction (Normal/Benign = 0, others = 1)
-                if is_benign:
-                    predictions.append(0)
+                if normal_idx is not None:
+                    # Attack probability = 1 - probability of Normal class
+                    binary_probs[key] = 1.0 - probs[:, normal_idx]
                 else:
-                    predictions.append(1)
-            
-            return predictions, confidences, attack_types
-            
-        else:
-            # Binary fusion logic
-            if self.fusion_strategy == FusionStrategy.VOTING:
-                preds, confs = self._fusion_voting(model_results, n_samples)
-            elif self.fusion_strategy == FusionStrategy.WEIGHTED:
-                preds, confs = self._fusion_weighted(model_results, n_samples)
-            elif self.fusion_strategy == FusionStrategy.CASCADE:
-                preds, confs = self._fusion_cascade(model_results, n_samples)
+                    # Fallback: assume first class is Normal
+                    binary_probs[key] = 1.0 - probs[:, 0]
             else:
-                preds, confs = self._fusion_weighted(model_results, n_samples)
+                binary_probs[key] = probs.flatten()
+                
+        if self.fusion_strategy == FusionStrategy.VOTING:
+            predictions, confidences = self._fusion_voting(binary_probs, n_samples)
+        elif self.fusion_strategy == FusionStrategy.WEIGHTED:
+            predictions, confidences = self._fusion_weighted(binary_probs, n_samples)
+        elif self.fusion_strategy == FusionStrategy.CASCADE:
+            predictions, confidences = self._fusion_cascade(binary_probs, n_samples)
+        elif self.fusion_strategy == FusionStrategy.STACKING:
+            # Fallback to weighted if stacking model not loaded
+            predictions, confidences = self._fusion_weighted(binary_probs, n_samples)
+        else:
+            predictions, confidences = self._fusion_voting(binary_probs, n_samples)
             
-            # Map binary predictions to attack types
-            attack_types = []
-            
-            # Try to get the real attack label from the primary model's metadata
-            real_attack_label = "Malicious"
-            if model_results:
-                primary_key = list(model_results.keys())[0]
-                if "label_mapping" in self.model_metadata.get(primary_key, {}):
-                    mapping = self.model_metadata[primary_key]["label_mapping"]
-                    # If it's a binary model mapping {0: BENIGN, 1: DDoS}, we extract the label for 1
-                    for k, v in mapping.items():
-                        if str(k) == "1" and str(v).lower() not in ["benign", "normal"]:
-                            real_attack_label = v
-                            break
-                            
-            for p in preds:
-                if p == 1:
-                    attack_types.append(real_attack_label) # Use the real label (e.g. DDoS) instead of generic Malicious
-                else:
-                    attack_types.append("Normal")
+        # Determine attack types
+        attack_types = []
+        
+        # Check if we are running inference with only one model
+        # If there's only one model and it's multiclass, we should preserve its attack types
+        # instead of treating it as a fusion of generic attacks.
+        if len(model_results) == 1:
+            key = list(model_results.keys())[0]
+            if model_results[key].ndim > 1 and model_results[key].shape[1] > 2:
+                meta = self.model_metadata.get(key, {})
+                label_mapping = meta.get("label_mapping", {})
+                
+                # Find Normal class index for consistency
+                normal_idx = None
+                for idx_str, label in label_mapping.items():
+                    if label.lower() in ["normal", "benign"]:
+                        normal_idx = int(idx_str)
+                        break
+                
+                for i in range(n_samples):
+                    probs = model_results[key][i]
                     
-            return preds, confs, attack_types
+                    if predictions[i] == 1:
+                        # Binary says attack: pick the highest-probability attack class
+                        if normal_idx is not None:
+                            attack_probs = probs.copy()
+                            attack_probs[normal_idx] = -1  # Exclude Normal
+                            attack_idx = int(np.argmax(attack_probs))
+                        else:
+                            attack_idx = int(np.argmax(probs))
+                        
+                        str_idx = str(attack_idx)
+                        label = label_mapping.get(str_idx, label_mapping.get(attack_idx, str_idx))
+                        attack_types.append(label)
+                    else:
+                        attack_types.append("Normal")
+                
+                return predictions, confidences, attack_types
+
+        # For actual fusion or binary models, fallback to generic types
+        for i in range(n_samples):
+            if predictions[i] == 1:
+                attack_types.append("Generic Attack (Fusion)")
+            else:
+                attack_types.append("Normal")
+                
+        return predictions, confidences, attack_types
     
-    def _fusion_voting(self, model_results: Dict[str, np.ndarray], 
+    def _fusion_voting(self, binary_probs: Dict[str, np.ndarray], 
                       n_samples: int) -> Tuple[List[int], List[float]]:
         """Hard voting fusion"""
         votes = np.zeros(n_samples)
         
-        for probs in model_results.values():
+        for probs in binary_probs.values():
             votes += (probs > 0.5).astype(int)
         
         # Majority vote
-        threshold = len(model_results) / 2
+        threshold = len(binary_probs) / 2
         predictions = (votes > threshold).astype(int).tolist()
         
         # Confidence = proportion of models agreeing
-        confidences = (votes / len(model_results)).tolist()
+        confidences = (votes / len(binary_probs)).tolist()
         
         return predictions, confidences
-    
-    def _fusion_weighted(self, model_results: Dict[str, np.ndarray],
+
+    def _fusion_weighted(self, binary_probs: Dict[str, np.ndarray], 
                         n_samples: int) -> Tuple[List[int], List[float]]:
-        """Weighted average fusion"""
-        aggregated_probs = np.zeros(n_samples)
+        """Weighted average fusion (Dynamic Soft Voting)"""
+        weighted_probs = np.zeros(n_samples)
         total_weight = 0.0
         
-        for model_key, probs in model_results.items():
-            model_name = self.model_metadata[model_key]["name"]
-            weight = self.model_weights.get(model_name, 1.0)
-            aggregated_probs += probs * weight
+        for key, probs in binary_probs.items():
+            weight = self.model_weights.get(key, 1.0)
+            weighted_probs += probs * weight
             total_weight += weight
-        
+            
         if total_weight > 0:
-            aggregated_probs /= total_weight
-        
-        predictions = (aggregated_probs > 0.5).astype(int).tolist()
-        confidences = aggregated_probs.tolist()
+            weighted_probs /= total_weight
+            
+        predictions = (weighted_probs > 0.5).astype(int).tolist()
+        confidences = weighted_probs.tolist()
         
         return predictions, confidences
-    
-    def _fusion_cascade(self, model_results: Dict[str, np.ndarray],
+
+    def _fusion_cascade(self, binary_probs: Dict[str, np.ndarray], 
                        n_samples: int) -> Tuple[List[int], List[float]]:
-        """
-        Cascade fusion: Use ML model first, then DL for uncertain cases.
-        This reduces DL inference overhead for clear-cut cases.
-        """
-        # Separate ML and DL results
-        ml_results = {}
-        dl_results = {}
+        """Cascade fusion: ML first, then DL if uncertain"""
+        # Categorize models
+        ml_keys = [k for k in binary_probs.keys() if "lightgbm" in k.lower() or "xgboost" in k.lower()]
+        dl_keys = [k for k in binary_probs.keys() if k not in ml_keys]
         
-        for model_key, probs in model_results.items():
-            if self.model_metadata[model_key].get("is_deep_learning"):
-                dl_results[model_key] = probs
+        # Fallback to weighted if separation fails
+        if not ml_keys or not dl_keys:
+            return self._fusion_weighted(binary_probs, n_samples)
+            
+        predictions = []
+        confidences = []
+        
+        # Average ML probabilities
+        ml_probs = np.zeros(n_samples)
+        for k in ml_keys:
+            ml_probs += binary_probs[k]
+        ml_probs /= len(ml_keys)
+        
+        # Average DL probabilities
+        dl_probs = np.zeros(n_samples)
+        for k in dl_keys:
+            dl_probs += binary_probs[k]
+        dl_probs /= len(dl_keys)
+        
+        for i in range(n_samples):
+            ml_prob = ml_probs[i]
+            
+            # If ML is very confident (either very low or very high probability)
+            if ml_prob < (1 - self.cascade_threshold) or ml_prob > self.cascade_threshold:
+                predictions.append(1 if ml_prob > 0.5 else 0)
+                confidences.append(float(ml_prob))
             else:
-                ml_results[model_key] = probs
-        
-        # Start with ML predictions
-        if ml_results:
-            ml_probs = np.mean(list(ml_results.values()), axis=0)
-        else:
-            ml_probs = np.full(n_samples, 0.5)
-        
-        # Identify uncertain samples
-        uncertain_mask = (ml_probs > (1 - self.cascade_threshold)) & (ml_probs < self.cascade_threshold)
-        
-        # Use DL for uncertain samples
-        final_probs = ml_probs.copy()
-        if dl_results and np.any(uncertain_mask):
-            dl_probs = np.mean(list(dl_results.values()), axis=0)
-            final_probs[uncertain_mask] = dl_probs[uncertain_mask]
-        
-        predictions = (final_probs > 0.5).astype(int).tolist()
-        confidences = final_probs.tolist()
-        
+                # ML is uncertain, defer to DL
+                dl_prob = dl_probs[i]
+                predictions.append(1 if dl_prob > 0.5 else 0)
+                confidences.append(float(dl_prob))
+                
         return predictions, confidences
     
     def get_model_info(self) -> Dict[str, Any]:

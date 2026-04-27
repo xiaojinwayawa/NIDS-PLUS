@@ -68,8 +68,8 @@ export const useSystemStore = defineStore('system', () => {
     systemState.value = state
   }
 
-  async function login(username: string, password: string) {
-    const response = await api.post('/auth/login', { username, password })
+  async function login(data: { username: string; password: string; captcha_id?: string; captcha_code?: string }) {
+    const response = await api.post('/auth/login', data)
     const { access_token } = response.data
     
     localStorage.setItem('token', access_token)
@@ -173,17 +173,26 @@ export const useSystemStore = defineStore('system', () => {
         if (alert.id != null) {
           const existingIndex = recentAlerts.value.findIndex(a => a.id === alert.id)
           if (existingIndex >= 0) {
+            const existingAlert = recentAlerts.value[existingIndex]
+            const mergedRepeatCount = alert.repeat_count ?? existingAlert.repeat_count ?? 1
             recentAlerts.value[existingIndex] = {
-              ...recentAlerts.value[existingIndex],
-              ...alert
+              ...existingAlert,
+              ...alert,
+              repeat_count: mergedRepeatCount
             }
             const [updatedAlert] = recentAlerts.value.splice(existingIndex, 1)
             recentAlerts.value.unshift(updatedAlert)
           } else {
-            recentAlerts.value.unshift(alert)
+            recentAlerts.value.unshift({
+              ...alert,
+              repeat_count: alert.repeat_count ?? 1
+            })
           }
         } else {
-          recentAlerts.value.unshift(alert)
+          recentAlerts.value.unshift({
+            ...alert,
+            repeat_count: alert.repeat_count ?? 1
+          })
         }
         if (recentAlerts.value.length > 20) {
           recentAlerts.value.length = 20

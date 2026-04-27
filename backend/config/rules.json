@@ -1,0 +1,158 @@
+{
+  "version": "1.0",
+  "description": "CIC-IDS2017 Rule Correction Configuration - Post-inference attack type correction rules",
+  "enable_rule_correction": false,
+  "rules": [
+    {
+      "id": "RULE_DDOS_001",
+      "name": "DDoS Flood Detection",
+      "description": "High packet rate DDoS attack targeting web ports",
+      "priority": 1,
+      "conditions": {
+        "Destination Port": {"in": [80, 443, 8080, 8000]},
+        "Flow Packets/s": {"min": 1000},
+        "Total Fwd Packets": {"min": 50},
+        "Total Backward Packets": {"max": 10}
+      },
+      "correction": "DDoS"
+    },
+    {
+      "id": "RULE_DDOS_002",
+      "name": "DDoS Detection (High Bytes)",
+      "description": "DDoS with extremely high byte rate",
+      "priority": 1,
+      "conditions": {
+        "Destination Port": {"in": [80, 443, 8080]},
+        "Flow Bytes/s": {"min": 500000},
+        "Total Fwd Packets": {"min": 30},
+        "Total Backward Packets": {"max": 15}
+      },
+      "correction": "DDoS"
+    },
+    {
+      "id": "RULE_PORTSCAN_001",
+      "name": "Port Scan Detection",
+      "description": "Short-duration SYN-heavy flows indicating port scanning",
+      "priority": 2,
+      "conditions": {
+        "SYN Flag Count": {"min": 3},
+        "Total Fwd Packets": {"min": 5, "max": 80},
+        "Flow Duration": {"max": 5000000}
+      },
+      "correction": "PortScan"
+    },
+    {
+      "id": "RULE_PORTSCAN_002",
+      "name": "Port Scan (Single Packet Probes)",
+      "description": "Very short flows with minimal data transfer",
+      "priority": 2,
+      "conditions": {
+        "Total Fwd Packets": {"min": 1, "max": 3},
+        "Total Backward Packets": {"max": 1},
+        "Flow Duration": {"max": 100000},
+        "Total Length of Fwd Packets": {"max": 100}
+      },
+      "correction": "PortScan"
+    },
+    {
+      "id": "RULE_DOS_HULK_001",
+      "name": "DoS Hulk Detection",
+      "description": "HTTP flood attack with PSH flags",
+      "priority": 2,
+      "conditions": {
+        "Destination Port": {"in": [80, 443]},
+        "Flow Packets/s": {"min": 100, "max": 1000},
+        "Fwd PSH Flags": {"min": 1},
+        "Fwd Packet Length Mean": {"max": 500}
+      },
+      "correction": "DoS Hulk"
+    },
+    {
+      "id": "RULE_DOS_SLOWHTTP_001",
+      "name": "DoS Slow HTTP Detection",
+      "description": "Slow HTTP attack with long duration and low packet count",
+      "priority": 2,
+      "conditions": {
+        "Destination Port": {"in": [80, 443]},
+        "Flow Duration": {"min": 1000000},
+        "Total Fwd Packets": {"max": 20},
+        "Fwd Packet Length Mean": {"max": 200}
+      },
+      "correction": "DoS Slowhttptest"
+    },
+    {
+      "id": "RULE_DOS_GOLDENEYE_001",
+      "name": "DoS GoldenEye Detection",
+      "description": "HTTP Keep-Alive abuse attack",
+      "priority": 2,
+      "conditions": {
+        "Destination Port": {"in": [80, 443]},
+        "Flow Packets/s": {"min": 50, "max": 500},
+        "Fwd PSH Flags": {"min": 1},
+        "Flow Duration": {"min": 500000}
+      },
+      "correction": "DoS GoldenEye"
+    },
+    {
+      "id": "RULE_DOS_SLOWLORIS_001",
+      "name": "DoS Slowloris Detection",
+      "description": "Slowloris-style attack with many concurrent connections",
+      "priority": 2,
+      "conditions": {
+        "Destination Port": {"in": [80, 443]},
+        "Flow Duration": {"min": 5000000},
+        "Total Fwd Packets": {"min": 5, "max": 50},
+        "Flow Packets/s": {"max": 50}
+      },
+      "correction": "DoS Slowloris"
+    },
+    {
+      "id": "RULE_WEBATTACK_001",
+      "name": "Web Attack Detection",
+      "description": "Suspicious traffic on HTTP/HTTPS ports with payload",
+      "priority": 3,
+      "conditions": {
+        "Destination Port": {"in": [80, 443, 8080, 8000, 8443]},
+        "Total Fwd Packets": {"min": 3},
+        "Fwd Packet Length Max": {"min": 100}
+      },
+      "correction": "Web Attack"
+    },
+    {
+      "id": "RULE_FTP_PATATOR_001",
+      "name": "FTP Brute Force Detection",
+      "description": "Frequent connection attempts on FTP port",
+      "priority": 3,
+      "conditions": {
+        "Destination Port": {"in": [21, 20]},
+        "Total Fwd Packets": {"min": 5, "max": 100},
+        "Flow Duration": {"max": 3000000}
+      },
+      "correction": "FTP-Patator"
+    },
+    {
+      "id": "RULE_SSH_PATATOR_001",
+      "name": "SSH Brute Force Detection",
+      "description": "Frequent connection attempts on SSH port",
+      "priority": 3,
+      "conditions": {
+        "Destination Port": 22,
+        "Total Fwd Packets": {"min": 5, "max": 100},
+        "Flow Duration": {"max": 3000000}
+      },
+      "correction": "SSH-Patator"
+    },
+    {
+      "id": "RULE_BOTNET_001",
+      "name": "Botnet Detection",
+      "description": "Periodic communication on non-standard ports",
+      "priority": 4,
+      "conditions": {
+        "Destination Port": {"not_in": [80, 443, 22, 21, 53, 123]},
+        "Fwd IAT Mean": {"min": 10000, "max": 300000},
+        "Total Fwd Packets": {"min": 5}
+      },
+      "correction": "Botnet"
+    }
+  ]
+}

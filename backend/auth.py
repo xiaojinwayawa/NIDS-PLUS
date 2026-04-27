@@ -30,6 +30,7 @@ class TokenData(BaseModel):
     """Token payload data"""
     username: Optional[str] = None
     user_id: Optional[int] = None
+    role: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -124,12 +125,13 @@ def decode_access_token(token: str) -> TokenData:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")
         user_id: int = payload.get("user_id")
+        role: str = payload.get("role", "user")
         
         if username is None:
             logger.warning("Token validation failed: username not found in payload")
             raise credentials_exception
             
-        token_data = TokenData(username=username, user_id=user_id)
+        token_data = TokenData(username=username, user_id=user_id, role=role)
         return token_data
         
     except JWTError as e:
@@ -152,6 +154,18 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     """
     token = credentials.credentials
     return decode_access_token(token)
+
+async def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    """
+    Dependency to ensure the current user is an admin
+    """
+    if current_user.role != "admin":
+        logger.warning(f"Access denied: User '{current_user.username}' attempted to access admin-only resource.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Administrator access required.",
+        )
+    return current_user
 
 
 # Mock user database (will be replaced with actual database queries)
