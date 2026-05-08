@@ -124,9 +124,7 @@
         </el-tab-pane>
       </el-tabs>
       
-      <div class="login-footer">
-        <p>默认超管账号: admin / admin123</p>
-      </div>
+
     </div>
   </div>
 </template>

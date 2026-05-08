@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 560" width="1500" height="560">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .box { fill: #fff; stroke: #000; stroke-width: 2; }
+      .aux { fill: #fff; stroke: #000; stroke-width: 1.7; stroke-dasharray: 7 5; }
+      .arrow { stroke: #000; stroke-width: 2; fill: none; }
+      .dashed { stroke: #000; stroke-width: 1.6; fill: none; stroke-dasharray: 7 5; }
+      .main { font-family: 'Times New Roman', SimSun, serif; font-size: 20px; font-weight: bold; fill: #000; }
+      .text { font-family: 'Times New Roman', SimSun, serif; font-size: 15px; fill: #000; }
+      .small { font-family: 'Times New Roman', SimSun, serif; font-size: 13px; fill: #000; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect width="1500" height="560" fill="#fff"/>
+  <text x="750" y="42" text-anchor="middle" class="title">图5-3 模型训练流程图</text>
+
+  <rect x="40" y="180" width="170" height="110" rx="10" class="box"/>
+  <text x="125" y="222" text-anchor="middle" class="main">训练数据集</text>
+  <text x="125" y="250" text-anchor="middle" class="text">CSV / CIC-IDS2017</text>
+
+  <rect x="260" y="180" width="210" height="110" rx="10" class="box"/>
+  <text x="365" y="214" text-anchor="middle" class="main">数据预处理</text>
+  <text x="365" y="242" text-anchor="middle" class="text">标签列识别</text>
+  <text x="365" y="266" text-anchor="middle" class="text">缺失值与异常值处理</text>
+
+  <rect x="520" y="180" width="210" height="110" rx="10" class="box"/>
+  <text x="625" y="214" text-anchor="middle" class="main">特征对齐</text>
+  <text x="625" y="242" text-anchor="middle" class="text">78维标准特征重排</text>
+  <text x="625" y="266" text-anchor="middle" class="text">多余列过滤 / 缺失列补零</text>
+
+  <rect x="780" y="180" width="200" height="110" rx="10" class="box"/>
+  <text x="880" y="214" text-anchor="middle" class="main">数据划分</text>
+  <text x="880" y="242" text-anchor="middle" class="text">训练集 / 测试集</text>
+  <text x="880" y="266" text-anchor="middle" class="text">按标签分层抽样</text>
+
+  <rect x="1030" y="180" width="210" height="110" rx="10" class="box"/>
+  <text x="1135" y="214" text-anchor="middle" class="main">标准化与平衡</text>
+  <text x="1135" y="242" text-anchor="middle" class="text">StandardScaler</text>
+  <text x="1135" y="266" text-anchor="middle" class="text">SMOTE（可选）</text>
+
+  <rect x="1290" y="180" width="170" height="110" rx="10" class="box"/>
+  <text x="1375" y="222" text-anchor="middle" class="main">模型训练</text>
+  <text x="1375" y="250" text-anchor="middle" class="text">LightGBM / 1D-CNN</text>
+
+  <line x1="210" y1="235" x2="260" y2="235" class="arrow" marker-end="url(#arrowhead)"/>
+  <line x1="470" y1="235" x2="520" y2="235" class="arrow" marker-end="url(#arrowhead)"/>
+  <line x1="730" y1="235" x2="780" y2="235" class="arrow" marker-end="url(#arrowhead)"/>
+  <line x1="980" y1="235" x2="1030" y2="235" class="arrow" marker-end="url(#arrowhead)"/>
+  <line x1="1240" y1="235" x2="1290" y2="235" class="arrow" marker-end="url(#arrowhead)"/>
+
+  <rect x="1180" y="360" width="180" height="84" rx="10" class="aux"/>
+  <text x="1270" y="392" text-anchor="middle" class="main">训练监控</text>
+  <text x="1270" y="418" text-anchor="middle" class="text">Epoch / Loss / Accuracy</text>
+
+  <rect x="870" y="360" width="300" height="84" rx="10" class="box"/>
+  <text x="1020" y="388" text-anchor="middle" class="main">性能评估</text>
+  <text x="1020" y="412" text-anchor="middle" class="text">Accuracy / Precision / Recall</text>
+  <text x="1020" y="434" text-anchor="middle" class="text">F1</text>
+
+  <rect x="680" y="360" width="180" height="84" rx="10" class="box"/>
+  <text x="770" y="392" text-anchor="middle" class="main">模型保存</text>
+  <text x="770" y="418" text-anchor="middle" class="text">模型文件 / Scaler / 元数据</text>
+
+  <line x1="1375" y1="298" x2="1375" y2="360" class="dashed" marker-end="url(#arrowhead)"/>
+  <line x1="1290" y1="402" x2="1170" y2="402" class="arrow" marker-end="url(#arrowhead)"/>
+  <line x1="870" y1="402" x2="860" y2="402" class="arrow" marker-end="url(#arrowhead)"/>
+
+  <rect x="520" y="60" width="460" height="66" rx="8" class="aux"/>
+  <text x="750" y="89" text-anchor="middle" class="text">可选不平衡处理：SMOTE、类别权重、Focal Loss、自定义数据平衡策略</text>
+  <text x="750" y="111" text-anchor="middle" class="small">训练结束后统一输出评估指标，并将模型持久化到模型目录中</text>
+</svg>

@@ -536,7 +536,8 @@ class DetectionEngine:
                 alert = self.alert_engine.generate_alert(
                     pkt_info,
                     prediction_result,
-                    model_id=None
+                    model_id=None,
+                    shap_analysis=shap_analysis
                 )
                 
                 if alert:
@@ -637,7 +638,8 @@ class DetectionEngine:
                 alert = self.alert_engine.generate_alert(
                     pkt_info,
                     prediction_result,
-                    model_id=None
+                    model_id=None,
+                    shap_analysis=shap_analysis
                 )
                 
                 if alert:

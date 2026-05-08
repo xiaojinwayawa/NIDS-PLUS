@@ -96,7 +96,8 @@ class AlertEngine:
     def generate_alert(self, 
                        packet_info: Dict[str, Any], 
                        prediction_result: Dict[str, Any],
-                       model_id: Optional[int] = None) -> Optional[AlertModel]:
+                       model_id: Optional[int] = None,
+                       shap_analysis: Optional[Dict[str, Any]] = None) -> Optional[AlertModel]:
         """
         Generate and persist an alert if threat detected
         
@@ -167,6 +168,8 @@ class AlertEngine:
                         repeat_count=int(current_event["repeat_count"]) + 1,
                         status="active",
                     )
+                    if shap_analysis:
+                        merged_raw_features["shap_analysis"] = deepcopy(shap_analysis)
 
                     existing.timestamp = alert_timestamp
                     existing.dst_ip = packet_info.get("dst_ip", existing.dst_ip)
@@ -205,6 +208,8 @@ class AlertEngine:
                 repeat_count=1,
                 status="active",
             )
+            if shap_analysis:
+                raw_features["shap_analysis"] = deepcopy(shap_analysis)
 
             alert = AlertModel(
                 timestamp=alert_timestamp,

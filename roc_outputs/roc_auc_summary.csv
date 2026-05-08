@@ -1,0 +1,4 @@
+﻿model_name,model_type,display_name,auc,samples
+fusion_allkinds_fusion_lightgbm,lightgbm,Fusion-LightGBM,0.999801,2830743
+fusion_allkinds_fusion_cnn,cnn,Fusion-1D-CNN,0.986012,2830743
+fusion_allkinds_fusion,fusion,Fusion Model,0.999339,2830743

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 620" width="1100" height="620">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 26px; font-weight: bold; fill: #000; }
+      .entity { fill: #fff; stroke: #000; stroke-width: 2; }
+      .head { fill: #fff; stroke: #000; stroke-width: 2; }
+      .entity-title { font-family: 'Times New Roman', SimSun, serif; font-size: 20px; font-weight: bold; fill: #000; }
+      .field { font-family: Consolas, 'Courier New', monospace; font-size: 14px; fill: #000; }
+      .line { stroke: #000; stroke-width: 1.8; fill: none; }
+      .label { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: #000; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+  <rect width="1100" height="620" fill="#fff"/>
+  <text x="550" y="42" text-anchor="middle" class="title">ER分图：数据集与用户关系</text>
+
+  <g transform="translate(110,120)">
+    <rect width="290" height="220" class="entity"/>
+    <rect width="290" height="38" class="head"/>
+    <text x="145" y="24" text-anchor="middle" class="entity-title">users</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">username</text>
+    <text x="14" y="118" class="field">email</text>
+    <text x="14" y="144" class="field">role</text>
+    <text x="14" y="170" class="field">is_active</text>
+    <text x="14" y="196" class="field">created_at, last_login</text>
+  </g>
+
+  <g transform="translate(580,100)">
+    <rect width="330" height="250" class="entity"/>
+    <rect width="330" height="38" class="head"/>
+    <text x="165" y="24" text-anchor="middle" class="entity-title">datasets</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">name</text>
+    <text x="14" y="118" class="field">type</text>
+    <text x="14" y="144" class="field">file_path</text>
+    <text x="14" y="170" class="field">sample_count, feature_count</text>
+    <text x="14" y="196" class="field">FK  uploaded_by</text>
+    <text x="14" y="222" class="field">created_at</text>
+    <text x="14" y="248" class="field">description</text>
+  </g>
+
+  <line x1="400" y1="225" x2="580" y2="225" class="line" marker-end="url(#arrow)"/>
+  <text x="490" y="208" text-anchor="middle" class="label">users.id → datasets.uploaded_by</text>
+  <text x="490" y="232" text-anchor="middle" class="label">1 : N（一个用户可上传多个数据集）</text>
+</svg>

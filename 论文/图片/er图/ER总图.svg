@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 920" width="1400" height="920">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .entity { fill: #fff; stroke: #000; stroke-width: 2; }
+      .head { fill: #fff; stroke: #000; stroke-width: 2; }
+      .entity-title { font-family: 'Times New Roman', SimSun, serif; font-size: 20px; font-weight: bold; fill: #000; }
+      .field { font-family: Consolas, 'Courier New', monospace; font-size: 14px; fill: #000; }
+      .line { stroke: #000; stroke-width: 1.8; fill: none; }
+      .label { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: #000; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="920" fill="#fff"/>
+  <text x="700" y="42" text-anchor="middle" class="title">ER总图</text>
+
+  <g transform="translate(70,90)">
+    <rect width="290" height="220" class="entity"/>
+    <rect width="290" height="38" class="head"/>
+    <text x="145" y="24" text-anchor="middle" class="entity-title">users</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">username</text>
+    <text x="14" y="118" class="field">email</text>
+    <text x="14" y="144" class="field">password_hash</text>
+    <text x="14" y="170" class="field">role</text>
+    <text x="14" y="196" class="field">is_active</text>
+    <text x="14" y="222" class="field">created_at, last_login</text>
+  </g>
+
+  <g transform="translate(540,70)">
+    <rect width="320" height="245" class="entity"/>
+    <rect width="320" height="38" class="head"/>
+    <text x="160" y="24" text-anchor="middle" class="entity-title">models</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">name</text>
+    <text x="14" y="118" class="field">type</text>
+    <text x="14" y="144" class="field">version</text>
+    <text x="14" y="170" class="field">file_path</text>
+    <text x="14" y="196" class="field">dataset_type</text>
+    <text x="14" y="222" class="field">is_active</text>
+    <text x="14" y="248" class="field">created_at, trained_at</text>
+  </g>
+
+  <g transform="translate(990,90)">
+    <rect width="300" height="220" class="entity"/>
+    <rect width="300" height="38" class="head"/>
+    <text x="150" y="24" text-anchor="middle" class="entity-title">model_metrics</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">FK  model_id</text>
+    <text x="14" y="118" class="field">accuracy</text>
+    <text x="14" y="144" class="field">precision_score</text>
+    <text x="14" y="170" class="field">recall, f1_score</text>
+    <text x="14" y="196" class="field">false_positive_rate</text>
+    <text x="14" y="222" class="field">timestamp, inference_time_ms</text>
+  </g>
+
+  <g transform="translate(475,395)">
+    <rect width="430" height="300" class="entity"/>
+    <rect width="430" height="38" class="head"/>
+    <text x="215" y="24" text-anchor="middle" class="entity-title">alerts</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">timestamp</text>
+    <text x="14" y="118" class="field">src_ip, dst_ip</text>
+    <text x="14" y="144" class="field">src_port, dst_port</text>
+    <text x="14" y="170" class="field">protocol</text>
+    <text x="14" y="196" class="field">attack_type</text>
+    <text x="14" y="222" class="field">confidence</text>
+    <text x="14" y="248" class="field">FK  model_id</text>
+    <text x="14" y="274" class="field">is_false_positive</text>
+    <text x="220" y="274" class="field">FK  marked_by</text>
+    <text x="14" y="300" class="field">marked_at, raw_features</text>
+  </g>
+
+  <g transform="translate(60,470)">
+    <rect width="320" height="220" class="entity"/>
+    <rect width="320" height="38" class="head"/>
+    <text x="160" y="24" text-anchor="middle" class="entity-title">datasets</text>
+    <text x="14" y="66" class="field">PK  id</text>
+    <text x="14" y="92" class="field">name</text>
+    <text x="14" y="118" class="field">type</text>
+    <text x="14" y="144" class="field">file_path</text>
+    <text x="14" y="170" class="field">sample_count, feature_count</text>
+    <text x="14" y="196" class="field">FK  uploaded_by</text>
+    <text x="14" y="222" class="field">created_at, description</text>
+  </g>
+
+  <line x1="360" y1="200" x2="540" y2="190" class="line" marker-end="url(#arrow)"/>
+  <text x="450" y="180" text-anchor="middle" class="label">用户可管理模型</text>
+
+  <line x1="860" y1="200" x2="990" y2="200" class="line" marker-end="url(#arrow)"/>
+  <text x="925" y="183" text-anchor="middle" class="label">1 : N</text>
+
+  <line x1="700" y1="315" x2="700" y2="395" class="line" marker-end="url(#arrow)"/>
+  <text x="722" y="362" class="label">1 : N</text>
+
+  <line x1="380" y1="600" x2="475" y2="560" class="line" marker-end="url(#arrow)"/>
+  <text x="425" y="565" text-anchor="middle" class="label">上传者</text>
+
+  <line x1="360" y1="225" x2="475" y2="540" class="line" marker-end="url(#arrow)"/>
+  <text x="395" y="390" class="label">误报标记</text>
+</svg>

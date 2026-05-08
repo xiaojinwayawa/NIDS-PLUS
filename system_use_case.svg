@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 650" width="800" height="650">
+    <defs>
+        <style>
+            .actor { fill: none; stroke: black; stroke-width: 1.5; }
+            .actor-head { fill: white; stroke: black; stroke-width: 1.5; }
+            .use-case { fill: white; stroke: black; stroke-width: 1.5; }
+            .system-boundary { fill: none; stroke: black; stroke-width: 1.5; stroke-dasharray: 5,5; }
+            .text-main { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: black; text-anchor: middle; dominant-baseline: middle; }
+            .text-title { font-family: 'Times New Roman', SimSun, serif; font-size: 18px; font-weight: bold; fill: black; }
+            .text-label { font-family: 'Times New Roman', SimSun, serif; font-size: 12px; fill: black; text-anchor: middle; dominant-baseline: middle; background-color: white;}
+            .line { stroke: black; stroke-width: 1.2; fill: none; }
+            .line-dashed { stroke: black; stroke-width: 1.2; fill: none; stroke-dasharray: 4,4; }
+            .arrow-head { fill: none; stroke: black; stroke-width: 1.2; }
+        </style>
+        
+        <!-- Arrowhead Marker for <<extend>> -->
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="black" />
+        </marker>
+    </defs>
+
+    <!-- Background -->
+    <rect width="100%" height="100%" fill="white" />
+
+    <!-- ==================== System Boundary ==================== -->
+    <rect x="200" y="50" width="400" height="550" class="system-boundary" />
+    <text x="400" y="70" class="text-title">网络入侵检测系统 (NIDS)</text>
+
+    <!-- ==================== Actors ==================== -->
+    <!-- User (普通用户) -->
+    <g transform="translate(80, 200)">
+        <circle cx="0" cy="-20" r="10" class="actor-head" />
+        <line x1="0" y1="-10" x2="0" y2="20" class="actor" />
+        <line x1="-15" y1="0" x2="15" y2="0" class="actor" />
+        <line x1="0" y1="20" x2="-15" y2="40" class="actor" />
+        <line x1="0" y1="20" x2="15" y2="40" class="actor" />
+        <text x="0" y="60" class="text-main" style="font-weight: bold;">普通用户</text>
+    </g>
+
+    <!-- Admin (管理员) -->
+    <g transform="translate(80, 450)">
+        <circle cx="0" cy="-20" r="10" class="actor-head" />
+        <line x1="0" y1="-10" x2="0" y2="20" class="actor" />
+        <line x1="-15" y1="0" x2="15" y2="0" class="actor" />
+        <line x1="0" y1="20" x2="-15" y2="40" class="actor" />
+        <line x1="0" y1="20" x2="15" y2="40" class="actor" />
+        <text x="0" y="60" class="text-main" style="font-weight: bold;">管理员</text>
+    </g>
+
+    <!-- ==================== Use Cases ==================== -->
+    
+    <!-- Group 1: 实时监控与告警 -->
+    <ellipse cx="400" cy="120" rx="70" ry="25" class="use-case" />
+    <text x="400" y="120" class="text-main">实时流量检测</text>
+    
+    <ellipse cx="400" cy="180" rx="70" ry="25" class="use-case" />
+    <text x="400" y="180" class="text-main">告警管理</text>
+
+    <!-- Group 2: 模型可解释性与误报 -->
+    <ellipse cx="600" cy="120" rx="70" ry="25" class="use-case" />
+    <text x="600" y="120" class="text-main">可解释性分析(SHAP)</text>
+
+    <ellipse cx="600" cy="180" rx="70" ry="25" class="use-case" />
+    <text x="600" y="180" class="text-main">标记误报</text>
+
+    <!-- Group 3: 模型训练与实验 -->
+    <ellipse cx="400" cy="260" rx="70" ry="25" class="use-case" />
+    <text x="400" y="260" class="text-main">模型训练</text>
+    
+    <ellipse cx="400" cy="330" rx="70" ry="25" class="use-case" />
+    <text x="400" y="330" class="text-main">实验对比分析</text>
+    
+    <ellipse cx="600" cy="330" rx="70" ry="25" class="use-case" />
+    <text x="600" y="330" class="text-main">晋升为正式模型</text>
+
+    <!-- Group 4: 总体评估 -->
+    <ellipse cx="400" cy="400" rx="70" ry="25" class="use-case" />
+    <text x="400" y="400" class="text-main">模型总体评估</text>
+
+    <!-- Group 5: 系统与用户管理 (Admin Only) -->
+    <ellipse cx="400" cy="480" rx="70" ry="25" class="use-case" />
+    <text x="400" y="480" class="text-main">数据集管理</text>
+
+    <ellipse cx="400" cy="550" rx="70" ry="25" class="use-case" />
+    <text x="400" y="550" class="text-main">用户与系统设置</text>
+
+    <!-- ==================== Connections (User) ==================== -->
+    <line x1="100" y1="200" x2="330" y2="120" class="line" />
+    <line x1="100" y1="200" x2="330" y2="180" class="line" />
+    <line x1="100" y1="200" x2="330" y2="260" class="line" />
+    <line x1="100" y1="200" x2="330" y2="330" class="line" />
+    <line x1="100" y1="200" x2="330" y2="400" class="line" />
+
+    <!-- ==================== Connections (Admin) ==================== -->
+    <!-- Admin connecting to common use cases -->
+    <line x1="100" y1="450" x2="330" y2="120" class="line" />
+    <line x1="100" y1="450" x2="330" y2="180" class="line" />
+    <line x1="100" y1="450" x2="330" y2="260" class="line" />
+    <line x1="100" y1="450" x2="330" y2="330" class="line" />
+    <line x1="100" y1="450" x2="330" y2="400" class="line" />
+    
+    <!-- Admin connecting to admin-specific use cases -->
+    <line x1="100" y1="450" x2="330" y2="480" class="line" />
+    <line x1="100" y1="450" x2="330" y2="550" class="line" />
+
+    <!-- ==================== Include / Extend Relationships ==================== -->
+    
+    <!-- 告警管理 -extend-> SHAP分析 -->
+    <path d="M 470 180 L 535 135" class="line-dashed" marker-end="url(#arrowhead)" />
+    <rect x="475" y="145" width="60" height="16" fill="white" />
+    <text x="505" y="153" class="text-label">&lt;&lt;extend&gt;&gt;</text>
+
+    <!-- 告警管理 -extend-> 标记误报 -->
+    <path d="M 470 180 L 530 180" class="line-dashed" marker-end="url(#arrowhead)" />
+    <rect x="475" y="172" width="50" height="16" fill="white" />
+    <text x="500" y="180" class="text-label">&lt;&lt;extend&gt;&gt;</text>
+
+    <!-- 实验对比分析 -extend-> 晋升正式模型 -->
+    <path d="M 470 330 L 530 330" class="line-dashed" marker-end="url(#arrowhead)" />
+    <rect x="475" y="322" width="50" height="16" fill="white" />
+    <text x="500" y="330" class="text-label">&lt;&lt;extend&gt;&gt;</text>
+
+</svg>

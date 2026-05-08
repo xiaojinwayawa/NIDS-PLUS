@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 720" width="1300" height="720">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .box-title { font-family: 'Times New Roman', SimSun, serif; font-size: 18px; font-weight: bold; fill: #000; }
+      .text { font-family: 'Times New Roman', SimSun, serif; font-size: 15px; fill: #000; }
+      .small { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: #000; }
+      .math { font-family: 'Times New Roman', Cambria, serif; font-size: 24px; fill: #000; font-style: italic; }
+      .box { fill: #fff; stroke: #000; stroke-width: 2; }
+      .sub { fill: #fff; stroke: #000; stroke-width: 1.5; }
+      .line { stroke: #000; stroke-width: 2; fill: none; }
+      .dashed { stroke: #000; stroke-width: 1.6; fill: none; stroke-dasharray: 7 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1300" height="720" fill="#fff"/>
+  <text x="650" y="42" text-anchor="middle" class="title">图4-5 加权融合策略流程图</text>
+
+  <rect x="90" y="150" width="200" height="90" rx="8" class="box"/>
+  <text x="190" y="183" text-anchor="middle" class="box-title">输入样本</text>
+  <text x="190" y="209" text-anchor="middle" class="text">78维标准化流特征</text>
+  <text x="190" y="229" text-anchor="middle" class="small">Feature Vector X</text>
+
+  <line x1="290" y1="195" x2="380" y2="195" class="line" marker-end="url(#arrow)"/>
+  <line x1="290" y1="195" x2="380" y2="345" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="380" y="120" width="240" height="110" rx="8" class="box"/>
+  <text x="500" y="155" text-anchor="middle" class="box-title">LightGBM 子模型</text>
+  <text x="500" y="182" text-anchor="middle" class="text">输出攻击概率 P_LGBM</text>
+  <text x="500" y="205" text-anchor="middle" class="small">速度快，结构化特征表达强</text>
+
+  <rect x="380" y="290" width="240" height="110" rx="8" class="box"/>
+  <text x="500" y="325" text-anchor="middle" class="box-title">1D-CNN 子模型</text>
+  <text x="500" y="352" text-anchor="middle" class="text">输出攻击概率 P_CNN</text>
+  <text x="500" y="375" text-anchor="middle" class="small">学习局部模式与非线性特征</text>
+
+  <line x1="620" y1="175" x2="720" y2="175" class="line" marker-end="url(#arrow)"/>
+  <line x1="620" y1="345" x2="720" y2="345" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="720" y="140" width="270" height="240" rx="8" class="box"/>
+  <text x="855" y="175" text-anchor="middle" class="box-title">加权融合模块</text>
+  <text x="855" y="210" text-anchor="middle" class="math">P_fusion = 0.6 · P_LGBM + 0.4 · P_CNN</text>
+  <rect x="760" y="245" width="90" height="58" class="sub"/>
+  <text x="805" y="268" text-anchor="middle" class="text">权重 0.6</text>
+  <text x="805" y="288" text-anchor="middle" class="small">LightGBM</text>
+  <rect x="860" y="245" width="90" height="58" class="sub"/>
+  <text x="905" y="268" text-anchor="middle" class="text">权重 0.4</text>
+  <text x="905" y="288" text-anchor="middle" class="small">1D-CNN</text>
+  <text x="855" y="340" text-anchor="middle" class="small">按概率加权求和，得到最终攻击置信度</text>
+
+  <line x1="990" y1="260" x2="1090" y2="260" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="1090" y="210" width="155" height="100" rx="8" class="box"/>
+  <text x="1167.5" y="243" text-anchor="middle" class="box-title">阈值判定</text>
+  <text x="1167.5" y="270" text-anchor="middle" class="text">P_fusion ≥ 0.5</text>
+  <text x="1167.5" y="292" text-anchor="middle" class="small">Attack / Normal</text>
+
+  <line x1="1167.5" y1="310" x2="1167.5" y2="420" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="1035" y="420" width="265" height="110" rx="8" class="box"/>
+  <text x="1167.5" y="455" text-anchor="middle" class="box-title">融合输出结果</text>
+  <text x="1167.5" y="482" text-anchor="middle" class="text">最终类别：Normal / Attack</text>
+  <text x="1167.5" y="505" text-anchor="middle" class="small">并记录综合置信度，用于告警与评估</text>
+
+  <rect x="120" y="490" width="820" height="120" class="box"/>
+  <text x="530" y="525" text-anchor="middle" class="box-title">策略说明</text>
+  <text x="155" y="555" class="text">1. LightGBM 负责快速建模结构化流量特征，提供稳定的基础判别概率。</text>
+  <text x="155" y="580" class="text">2. 1D-CNN 负责补充局部模式表达能力，弥补单一树模型的表示局限。</text>
+  <text x="155" y="605" class="text">3. 融合层采用加权平均而非硬投票，可连续保留两个子模型的置信信息。</text>
+
+  <line x1="855" y1="380" x2="855" y2="470" class="dashed" marker-end="url(#arrow)"/>
+  <line x1="1035" y1="475" x2="940" y2="475" class="dashed" marker-end="url(#arrow)"/>
+  <text x="950" y="458" class="small">用于离线评估 / 实时告警</text>
+</svg>

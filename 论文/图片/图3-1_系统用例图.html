@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图3-1 系统用例图</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 28px;
+            background:
+                radial-gradient(circle at top left, #f0f0f0 0, transparent 26%),
+                radial-gradient(circle at top right, #fafafa 0, transparent 24%),
+                linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%);
+            font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
+            color: #111827;
+        }
+
+        .page {
+            width: 1480px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #d9d9d9;
+            border-radius: 0;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
+            overflow: hidden;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 34px 18px;
+            background: linear-gradient(135deg, #f7f7f7 0%, #efefef 100%);
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .badge {
+            min-width: 92px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #4b5563 0%, #111827 100%);
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 32px;
+            line-height: 1.2;
+            color: #111827;
+        }
+
+        .subtitle {
+            margin: 0;
+            font-size: 16px;
+            color: #4b5563;
+        }
+
+        .tag {
+            padding: 10px 16px;
+            border-radius: 12px;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            color: #374151;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .canvas {
+            padding: 28px 30px 20px;
+        }
+
+        .figure-shell {
+            padding: 22px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, #fbfbfb 0%, #f5f5f5 100%);
+            border: 1px solid #e5e7eb;
+        }
+
+        svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .insights {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+            margin-top: 18px;
+        }
+
+        .card {
+            padding: 18px;
+            border-radius: 18px;
+            background: #ffffff;
+            border: 1.8px solid #000000;
+        }
+
+        .card h3 {
+            margin: 0 0 10px;
+            font-size: 18px;
+            color: #111827;
+        }
+
+        .card p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #374151;
+        }
+
+        .footer-note {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 16px 32px 26px;
+            color: #4b5563;
+            font-size: 14px;
+        }
+
+        .footer-note span {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #f9fafb;
+            border: 1px solid #d1d5db;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+                background: #ffffff;
+            }
+
+            .page {
+                width: 100%;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="title-wrap">
+                <div class="badge">图 3-1</div>
+                <div>
+                    <h1>系统用例图</h1>
+                    <p class="subtitle">展示系统管理员与安全分析员两类角色在网络入侵检测系统中的主要操作用例</p>
+                </div>
+            </div>
+            <div class="tag">UML 用例图 · 黑白论文风</div>
+        </div>
+
+        <div class="canvas">
+            <div class="figure-shell">
+                <svg viewBox="0 0 1400 900" xmlns="http://www.w3.org/2000/svg" aria-label="系统用例图">
+                    <defs>
+                        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#9ca3af" flood-opacity="0.18"/>
+                        </filter>
+                        <marker id="relationArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+                            <path d="M1,1 L10,6 L1,11" fill="none" stroke="#000000" stroke-width="1.6"/>
+                        </marker>
+                    </defs>
+
+                    <rect x="20" y="20" width="1360" height="860" fill="#ffffff"/>
+                    <text x="700" y="60" text-anchor="middle" font-size="26" font-weight="700" fill="#111827">网络入侵检测系统主要围绕监控分析、模型管理和系统维护三个方向提供业务功能</text>
+                    <text x="700" y="90" text-anchor="middle" font-size="15" fill="#4b5563">图中以系统管理员和安全分析员为主，体现不同角色对告警分析、训练实验和系统管理功能的使用关系</text>
+
+                    <g filter="url(#shadow)">
+                        <circle cx="130" cy="170" r="24" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                        <line x1="130" y1="194" x2="130" y2="258" stroke="#000000" stroke-width="2.5"/>
+                        <line x1="94" y1="214" x2="166" y2="214" stroke="#000000" stroke-width="2.5"/>
+                        <line x1="130" y1="258" x2="100" y2="310" stroke="#000000" stroke-width="2.5"/>
+                        <line x1="130" y1="258" x2="160" y2="310" stroke="#000000" stroke-width="2.5"/>
+                        <text x="130" y="340" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">系统管理员</text>
+                    </g>
+
+                    <g filter="url(#shadow)">
+                        <circle cx="1270" cy="170" r="24" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                        <line x1="1270" y1="194" x2="1270" y2="258" stroke="#000000" stroke-width="2.5"/>
+                        <line x1="1234" y1="214" x2="1306" y2="214" stroke="#000000" stroke-width="2.5"/>
+                        <line x1="1270" y1="258" x2="1240" y2="310" stroke="#000000" stroke-width="2.5"/>
+                        <line x1="1270" y1="258" x2="1300" y2="310" stroke="#000000" stroke-width="2.5"/>
+                        <text x="1270" y="340" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">安全分析员</text>
+                    </g>
+
+                    <rect x="250" y="130" width="900" height="650" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="700" y="165" text-anchor="middle" font-size="24" font-weight="700" fill="#000000">网络入侵检测系统</text>
+
+                    <ellipse cx="430" cy="240" rx="110" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="430" y="247" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">登录系统</text>
+
+                    <ellipse cx="700" cy="240" rx="120" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="700" y="247" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">查看系统仪表盘</text>
+
+                    <ellipse cx="970" cy="240" rx="110" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="970" y="247" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">监控实时流量</text>
+
+                    <ellipse cx="430" cy="360" rx="118" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="430" y="367" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">查看告警事件</text>
+
+                    <ellipse cx="700" cy="360" rx="118" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="700" y="367" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">分析攻击类型</text>
+
+                    <ellipse cx="970" cy="360" rx="126" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="970" y="367" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">处理误报反馈</text>
+
+                    <ellipse cx="430" cy="480" rx="125" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="430" y="487" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">管理训练任务</text>
+
+                    <ellipse cx="700" cy="480" rx="132" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="700" y="487" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">开展融合实验</text>
+
+                    <ellipse cx="970" cy="480" rx="126" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="970" y="487" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">执行模型回放评估</text>
+
+                    <ellipse cx="430" cy="600" rx="118" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="430" y="607" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">管理数据集</text>
+
+                    <ellipse cx="700" cy="600" rx="110" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="700" y="607" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">查看系统日志</text>
+
+                    <ellipse cx="970" cy="600" rx="118" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="970" y="607" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">管理用户与权限</text>
+
+                    <ellipse cx="700" cy="710" rx="125" ry="36" fill="#ffffff" stroke="#000000" stroke-width="2"/>
+                    <text x="700" y="717" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">配置系统参数</text>
+
+                    <line x1="154" y1="204" x2="318" y2="236" stroke="#000000" stroke-width="2"/>
+                    <line x1="154" y1="214" x2="582" y2="240" stroke="#000000" stroke-width="2"/>
+                    <line x1="154" y1="226" x2="318" y2="354" stroke="#000000" stroke-width="2"/>
+                    <line x1="154" y1="238" x2="304" y2="476" stroke="#000000" stroke-width="2"/>
+                    <line x1="154" y1="252" x2="314" y2="596" stroke="#000000" stroke-width="2"/>
+                    <line x1="154" y1="264" x2="590" y2="705" stroke="#000000" stroke-width="2"/>
+                    <line x1="154" y1="246" x2="852" y2="596" stroke="#000000" stroke-width="2"/>
+
+                    <line x1="1246" y1="204" x2="1080" y2="236" stroke="#000000" stroke-width="2"/>
+                    <line x1="1246" y1="214" x2="820" y2="240" stroke="#000000" stroke-width="2"/>
+                    <line x1="1246" y1="226" x2="1088" y2="354" stroke="#000000" stroke-width="2"/>
+                    <line x1="1246" y1="238" x2="818" y2="360" stroke="#000000" stroke-width="2"/>
+                    <line x1="1246" y1="250" x2="1096" y2="476" stroke="#000000" stroke-width="2"/>
+                    <line x1="1246" y1="262" x2="820" y2="480" stroke="#000000" stroke-width="2"/>
+
+                    <line x1="582" y1="360" x2="548" y2="360" stroke="#000000" stroke-width="1.8" stroke-dasharray="8 6" marker-end="url(#relationArrow)"/>
+                    <text x="565" y="345" text-anchor="middle" font-size="14" fill="#000000">&lt;&lt;include&gt;&gt;</text>
+
+                    <line x1="844" y1="360" x2="818" y2="360" stroke="#000000" stroke-width="1.8" stroke-dasharray="8 6" marker-end="url(#relationArrow)"/>
+                    <text x="831" y="345" text-anchor="middle" font-size="14" fill="#000000">&lt;&lt;extend&gt;&gt;</text>
+
+                    <line x1="568" y1="480" x2="555" y2="480" stroke="#000000" stroke-width="1.8" stroke-dasharray="8 6" marker-end="url(#relationArrow)"/>
+                    <text x="558" y="465" text-anchor="middle" font-size="14" fill="#000000">&lt;&lt;include&gt;&gt;</text>
+
+                    <line x1="430" y1="204" x2="430" y2="178" stroke="#000000" stroke-width="1.6" stroke-dasharray="6 6"/>
+                    <line x1="700" y1="204" x2="700" y2="178" stroke="#000000" stroke-width="1.6" stroke-dasharray="6 6"/>
+                    <line x1="970" y1="204" x2="970" y2="178" stroke="#000000" stroke-width="1.6" stroke-dasharray="6 6"/>
+                    <text x="700" y="836" text-anchor="middle" font-size="16" fill="#4b5563">说明：虚线表示用例间的包含或扩展关系，实线表示角色与用例之间的参与关系</text>
+                </svg>
+
+                <div class="insights">
+                    <div class="card">
+                        <h3>系统管理员职责</h3>
+                        <p>系统管理员偏向平台运维与资源管理，负责训练任务、数据集、用户权限、系统参数和运行日志等后台管理工作。</p>
+                    </div>
+                    <div class="card">
+                        <h3>安全分析员职责</h3>
+                        <p>安全分析员偏向业务监控与安全研判，主要关注实时流量、告警事件、攻击类型分析、误报反馈和模型效果验证。</p>
+                    </div>
+                    <div class="card">
+                        <h3>用例关系说明</h3>
+                        <p>用例图既体现共享功能，如登录和仪表盘查看，也突出角色差异化能力，有助于论文中说明系统边界和权限划分逻辑。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-note">
+            <span>注：该图结合系统前端模块与业务流程整理而成，用于论文中展示用户角色和功能用例之间的对应关系。</span>
+            <span>建议浏览器缩放 100% 截图，或打印为 PDF 后裁切插入论文。</span>
+        </div>
+    </div>
+</body>
+</html>

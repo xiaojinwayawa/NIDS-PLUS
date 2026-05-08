@@ -1,0 +1,23 @@
+[
+  {
+    "model_name": "fusion_allkinds_fusion_lightgbm",
+    "model_type": "lightgbm",
+    "display_name": "Fusion-LightGBM",
+    "auc": 0.999801,
+    "samples": 2830743
+  },
+  {
+    "model_name": "fusion_allkinds_fusion_cnn",
+    "model_type": "cnn",
+    "display_name": "Fusion-1D-CNN",
+    "auc": 0.986012,
+    "samples": 2830743
+  },
+  {
+    "model_name": "fusion_allkinds_fusion",
+    "model_type": "fusion",
+    "display_name": "Fusion Model",
+    "auc": 0.999339,
+    "samples": 2830743
+  }
+]

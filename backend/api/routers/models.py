@@ -306,6 +306,9 @@ async def list_models(
                     # If label_mapping exists, expose it directly or via metadata
                     if "label_mapping" in meta:
                         model_info["label_mapping"] = meta["label_mapping"]
+                    # Extract training time from metrics
+                    if meta.get("metrics", {}).get("training_time"):
+                        model_info["training_time"] = meta["metrics"]["training_time"]
         except Exception as e:
             # Don't fail listing if metadata load fails
             pass
@@ -360,6 +363,9 @@ async def list_models(
                                 model_info["metrics"] = meta.get("metrics")
                                 if meta.get("timestamp"):
                                     model_info["trained_at"] = datetime.fromtimestamp(meta["timestamp"]).isoformat()
+                                # Extract training time from metrics
+                                if meta.get("metrics", {}).get("training_time"):
+                                    model_info["training_time"] = meta["metrics"]["training_time"]
                         except:
                             pass
                     

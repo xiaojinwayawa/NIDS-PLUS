@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 860" width="1300" height="860">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .entity-title { font-family: 'Times New Roman', SimSun, serif; font-size: 18px; font-weight: bold; fill: #000; }
+      .field { font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; fill: #000; }
+      .box { fill: #fff; stroke: #000; stroke-width: 2; }
+      .head { fill: #fff; stroke: #000; stroke-width: 2; }
+      .line { stroke: #000; stroke-width: 1.8; fill: none; }
+      .label { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: #000; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1300" height="860" fill="#fff"/>
+  <text x="650" y="42" text-anchor="middle" class="title">图4-4 数据库ER图</text>
+
+  <g transform="translate(70,90)">
+    <rect x="0" y="0" width="270" height="205" class="box"/>
+    <rect x="0" y="0" width="270" height="36" class="head"/>
+    <text x="135" y="23" text-anchor="middle" class="entity-title">users</text>
+    <text x="14" y="60" class="field">PK  id : INT</text>
+    <text x="14" y="84" class="field">username : VARCHAR(50)</text>
+    <text x="14" y="108" class="field">email : VARCHAR(100)</text>
+    <text x="14" y="132" class="field">password_hash : VARCHAR(255)</text>
+    <text x="14" y="156" class="field">role : VARCHAR(20)</text>
+    <text x="14" y="180" class="field">is_active : BOOLEAN</text>
+    <text x="14" y="204" class="field">created_at / last_login</text>
+  </g>
+
+  <g transform="translate(500,70)">
+    <rect x="0" y="0" width="300" height="240" class="box"/>
+    <rect x="0" y="0" width="300" height="36" class="head"/>
+    <text x="150" y="23" text-anchor="middle" class="entity-title">models</text>
+    <text x="14" y="60" class="field">PK  id : INT</text>
+    <text x="14" y="84" class="field">name : VARCHAR(100)</text>
+    <text x="14" y="108" class="field">type : VARCHAR(50)</text>
+    <text x="14" y="132" class="field">version : VARCHAR(20)</text>
+    <text x="14" y="156" class="field">file_path : VARCHAR(255)</text>
+    <text x="14" y="180" class="field">dataset_type : VARCHAR(50)</text>
+    <text x="14" y="204" class="field">is_active : BOOLEAN</text>
+    <text x="14" y="228" class="field">created_at / trained_at</text>
+  </g>
+
+  <g transform="translate(930,85)">
+    <rect x="0" y="0" width="290" height="215" class="box"/>
+    <rect x="0" y="0" width="290" height="36" class="head"/>
+    <text x="145" y="23" text-anchor="middle" class="entity-title">model_metrics</text>
+    <text x="14" y="60" class="field">PK  id : INT</text>
+    <text x="14" y="84" class="field">FK  model_id : INT</text>
+    <text x="14" y="108" class="field">accuracy : FLOAT</text>
+    <text x="14" y="132" class="field">precision_score : FLOAT</text>
+    <text x="14" y="156" class="field">recall / f1_score : FLOAT</text>
+    <text x="14" y="180" class="field">false_positive_rate : FLOAT</text>
+    <text x="14" y="204" class="field">timestamp / inference_time_ms</text>
+  </g>
+
+  <g transform="translate(445,380)">
+    <rect x="0" y="0" width="410" height="275" class="box"/>
+    <rect x="0" y="0" width="410" height="36" class="head"/>
+    <text x="205" y="23" text-anchor="middle" class="entity-title">alerts</text>
+    <text x="14" y="60" class="field">PK  id : INT</text>
+    <text x="14" y="84" class="field">timestamp : DATETIME</text>
+    <text x="14" y="108" class="field">src_ip / dst_ip : VARCHAR(45)</text>
+    <text x="14" y="132" class="field">src_port / dst_port : INT</text>
+    <text x="14" y="156" class="field">protocol : VARCHAR(10)</text>
+    <text x="14" y="180" class="field">attack_type : VARCHAR(50)</text>
+    <text x="14" y="204" class="field">confidence : FLOAT</text>
+    <text x="14" y="228" class="field">FK  model_id : INT → models.id</text>
+    <text x="14" y="252" class="field">FK  marked_by : INT → users.id</text>
+    <text x="220" y="252" class="field">raw_features : JSON</text>
+  </g>
+
+  <g transform="translate(60,435)">
+    <rect x="0" y="0" width="300" height="205" class="box"/>
+    <rect x="0" y="0" width="300" height="36" class="head"/>
+    <text x="150" y="23" text-anchor="middle" class="entity-title">datasets</text>
+    <text x="14" y="60" class="field">PK  id : INT</text>
+    <text x="14" y="84" class="field">name : VARCHAR(100)</text>
+    <text x="14" y="108" class="field">type : VARCHAR(50)</text>
+    <text x="14" y="132" class="field">file_path : VARCHAR(255)</text>
+    <text x="14" y="156" class="field">sample_count / feature_count</text>
+    <text x="14" y="180" class="field">FK  uploaded_by : INT → users.id</text>
+    <text x="14" y="204" class="field">created_at / description</text>
+  </g>
+
+  <g transform="translate(955,470)">
+    <rect x="0" y="0" width="250" height="145" class="box"/>
+    <rect x="0" y="0" width="250" height="36" class="head"/>
+    <text x="125" y="23" text-anchor="middle" class="entity-title">system_config</text>
+    <text x="14" y="60" class="field">PK  id : INT</text>
+    <text x="14" y="84" class="field">config_key : VARCHAR(100)</text>
+    <text x="14" y="108" class="field">config_value : TEXT</text>
+    <text x="14" y="132" class="field">FK  updated_by : INT → users.id</text>
+  </g>
+
+  <line x1="340" y1="190" x2="500" y2="190" class="line" marker-end="url(#arrow)"/>
+  <text x="420" y="178" text-anchor="middle" class="label">1 : N</text>
+
+  <line x1="800" y1="190" x2="930" y2="190" class="line" marker-end="url(#arrow)"/>
+  <text x="865" y="178" text-anchor="middle" class="label">1 : N</text>
+
+  <line x1="650" y1="310" x2="650" y2="380" class="line" marker-end="url(#arrow)"/>
+  <text x="670" y="350" class="label">1 : N</text>
+
+  <line x1="250" y1="295" x2="250" y2="435" class="line" marker-end="url(#arrow)"/>
+  <text x="270" y="372" class="label">1 : N</text>
+
+  <line x1="340" y1="220" x2="445" y2="500" class="line" marker-end="url(#arrow)"/>
+  <text x="366" y="355" class="label">1 : N</text>
+
+  <line x1="1070" y1="470" x2="300" y2="240" class="line" marker-end="url(#arrow)"/>
+  <text x="720" y="340" class="label">N : 1</text>
+
+  <text x="650" y="760" text-anchor="middle" class="label">说明：ER 图以系统核心业务表为主，突出用户、模型、告警、数据集和模型指标之间的主外键关系。</text>
+</svg>

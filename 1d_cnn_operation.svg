@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+    <defs>
+        <style>
+            .box { fill: none; stroke: black; stroke-width: 1.5; }
+            .box-highlight { fill: none; stroke: black; stroke-width: 2; stroke-dasharray: 5,5; }
+            .text-main { font-family: 'Times New Roman', serif; font-size: 16px; fill: black; text-anchor: middle; dominant-baseline: middle; }
+            .text-title { font-family: 'Times New Roman', serif; font-size: 18px; font-weight: bold; fill: black; }
+            .text-math { font-family: 'Times New Roman', serif; font-size: 14px; font-style: italic; fill: black; text-anchor: middle; dominant-baseline: middle; }
+            .arrow { stroke: black; stroke-width: 1.5; fill: none; }
+            .arrow-dashed { stroke: black; stroke-width: 1.5; fill: none; stroke-dasharray: 5,5; }
+            .arrow-head { fill: black; }
+        </style>
+        
+        <!-- Arrowhead Marker -->
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="arrow-head" />
+        </marker>
+    </defs>
+
+    <!-- Background -->
+    <rect width="100%" height="100%" fill="white" />
+
+    <!-- ==================== 1. Input Features ==================== -->
+    <text x="100" y="50" class="text-title">Input Features (1D Vector)</text>
+    <g transform="translate(100, 70)">
+        <!-- Highlighted Receptive Field Box (Size=3) -->
+        <rect x="-5" y="-5" width="160" height="50" class="box-highlight" />
+        <text x="75" y="-15" class="text-main" style="font-size: 14px;">Receptive Field</text>
+        
+        <!-- Input Array Cells (Size=7) -->
+        <rect x="0" y="0" width="50" height="40" class="box" />
+        <text x="25" y="20" class="text-math">x₁</text>
+        
+        <rect x="50" y="0" width="50" height="40" class="box" />
+        <text x="75" y="20" class="text-math">x₂</text>
+        
+        <rect x="100" y="0" width="50" height="40" class="box" />
+        <text x="125" y="20" class="text-math">x₃</text>
+        
+        <rect x="150" y="0" width="50" height="40" class="box" />
+        <text x="175" y="20" class="text-math">x₄</text>
+        
+        <rect x="200" y="0" width="50" height="40" class="box" />
+        <text x="225" y="20" class="text-math">x₅</text>
+        
+        <rect x="250" y="0" width="50" height="40" class="box" />
+        <text x="275" y="20" class="text-math">x₆</text>
+        
+        <rect x="300" y="0" width="50" height="40" class="box" />
+        <text x="325" y="20" class="text-math">x₇</text>
+        
+        <!-- Sliding Direction Arrow -->
+        <path d="M 170 20 L 230 20" class="arrow-dashed" marker-end="url(#arrowhead)"/>
+        <text x="200" y="5" class="text-main" style="font-size: 12px;">Stride = 1</text>
+    </g>
+
+    <!-- ==================== 2. Convolution Kernel ==================== -->
+    <text x="100" y="180" class="text-title">Convolution Kernel (Size=3)</text>
+    <g transform="translate(100, 200)">
+        <rect x="0" y="0" width="50" height="40" class="box" />
+        <text x="25" y="20" class="text-math">w₁</text>
+        
+        <rect x="50" y="0" width="50" height="40" class="box" />
+        <text x="75" y="20" class="text-math">w₂</text>
+        
+        <rect x="100" y="0" width="50" height="40" class="box" />
+        <text x="125" y="20" class="text-math">w₃</text>
+    </g>
+
+    <!-- ==================== 3. Math Operations (Dot Product) ==================== -->
+    <g transform="translate(100, 110)">
+        <!-- Vertical connecting lines from Input to Kernel -->
+        <path d="M 25 0 L 25 90" class="arrow" marker-end="url(#arrowhead)"/>
+        <path d="M 75 0 L 75 90" class="arrow" marker-end="url(#arrowhead)"/>
+        <path d="M 125 0 L 125 90" class="arrow" marker-end="url(#arrowhead)"/>
+        <text x="40" y="45" class="text-main">×</text>
+        <text x="90" y="45" class="text-main">×</text>
+        <text x="140" y="45" class="text-main">×</text>
+    </g>
+
+    <!-- Summation Node -->
+    <g transform="translate(175, 290)">
+        <circle cx="0" cy="0" r="20" class="box" />
+        <text x="0" y="2" class="text-main" style="font-size: 20px;">∑</text>
+        <text x="45" y="0" class="text-main" style="font-size: 14px;">Dot Product</text>
+        
+        <!-- Lines from Kernel to Sum -->
+        <path d="M -50 -50 L -15 -15" class="arrow" marker-end="url(#arrowhead)"/>
+        <path d="M 0 -50 L 0 -20" class="arrow" marker-end="url(#arrowhead)"/>
+        <path d="M 50 -50 L 15 -15" class="arrow" marker-end="url(#arrowhead)"/>
+    </g>
+
+    <!-- ==================== 4. Output Feature Map ==================== -->
+    <text x="100" y="370" class="text-title">Output Feature Map</text>
+    <g transform="translate(100, 390)">
+        <!-- Highlighted Output Cell -->
+        <rect x="-5" y="-5" width="60" height="50" class="box-highlight" />
+        
+        <rect x="0" y="0" width="50" height="40" class="box" />
+        <text x="25" y="20" class="text-math">y₁</text>
+        
+        <rect x="50" y="0" width="50" height="40" class="box" />
+        <text x="75" y="20" class="text-math">y₂</text>
+        
+        <rect x="100" y="0" width="50" height="40" class="box" />
+        <text x="125" y="20" class="text-math">y₃</text>
+        
+        <rect x="150" y="0" width="50" height="40" class="box" />
+        <text x="175" y="20" class="text-math">y₄</text>
+        
+        <rect x="200" y="0" width="50" height="40" class="box" />
+        <text x="225" y="20" class="text-math">y₅</text>
+    </g>
+
+    <!-- Line from Sum to Output -->
+    <path d="M 175 310 L 125 390" class="arrow" marker-end="url(#arrowhead)"/>
+    
+    <!-- Equation Explanation -->
+    <text x="450" y="300" class="text-math" style="text-anchor: start;">y₁ = (x₁·w₁) + (x₂·w₂) + (x₃·w₃)</text>
+</svg>

@@ -91,6 +91,18 @@
           </template>
         </el-table-column>
         <el-table-column prop="dataset_type" label="数据集" width="140" />
+        <el-table-column label="训练时间" width="180">
+          <template #default="scope">
+            <span v-if="scope.row.trained_at">{{ formatDate(scope.row.trained_at) }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="训练时长" width="140">
+          <template #default="scope">
+            <span v-if="scope.row.training_time">{{ formatDuration(scope.row.training_time) }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
 
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
@@ -174,6 +186,36 @@ const balancerProgress = ref<any>(null)
 let balancerInterval: number | null = null
 let currentBalanceTaskId: string | null = null
 const formatTime = (s: number) => s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s/60)}m ${(s%60).toFixed(0)}s`
+const formatDate = (dateStr: string) => {
+  try {
+    const date = new Date(dateStr)
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  } catch {
+    return '-'
+  }
+}
+
+const formatDuration = (seconds: number) => {
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}秒`
+  } else if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}分${secs}秒`
+  } else {
+    const hours = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${hours}小时${mins}分${secs}秒`
+  }
+}
 
 // 模型类型级联选择器选项
 const modelTypeOptions = [

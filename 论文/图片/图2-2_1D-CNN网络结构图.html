@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图2-2 1D-CNN网络结构图</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 28px;
+            background:
+                radial-gradient(circle at top left, #f0f0f0 0, transparent 26%),
+                radial-gradient(circle at top right, #fafafa 0, transparent 24%),
+                linear-gradient(180deg, #f5f5f5 0%, #ebebeb 100%);
+            font-family: "Microsoft YaHei", "PingFang SC", "SimHei", sans-serif;
+            color: #111827;
+        }
+
+        .page {
+            width: 1400px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #d9d9d9;
+            border-radius: 24px;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
+            overflow: hidden;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 34px 18px;
+            background: linear-gradient(135deg, #f7f7f7 0%, #efefef 100%);
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .badge {
+            min-width: 92px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #4b5563 0%, #111827 100%);
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 32px;
+            line-height: 1.2;
+            color: #111827;
+        }
+
+        .subtitle {
+            margin: 0;
+            font-size: 16px;
+            color: #4b5563;
+        }
+
+        .tag {
+            padding: 10px 16px;
+            border-radius: 12px;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            color: #374151;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .canvas {
+            padding: 28px 30px 20px;
+        }
+
+        .figure-shell {
+            padding: 22px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, #fbfbfb 0%, #f5f5f5 100%);
+            border: 1px solid #e5e7eb;
+        }
+
+        svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .insights {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px;
+            margin-top: 18px;
+        }
+
+        .card {
+            padding: 18px;
+            border-radius: 18px;
+            background: #ffffff;
+            border: 1.8px solid #000000;
+        }
+
+        .card h3 {
+            margin: 0 0 10px;
+            font-size: 18px;
+            color: #111827;
+        }
+
+        .card p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.7;
+            color: #374151;
+        }
+
+        .footer-note {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 16px 32px 26px;
+            color: #4b5563;
+            font-size: 14px;
+        }
+
+        .footer-note span {
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #f9fafb;
+            border: 1px solid #d1d5db;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+                background: #ffffff;
+            }
+
+            .page {
+                width: 100%;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="title-wrap">
+                <div class="badge">图 2-2</div>
+                <div>
+                    <h1>1D-CNN 网络结构图</h1>
+                    <p class="subtitle">展示输入特征经过卷积层、池化层和全连接层后完成分类的整体流程</p>
+                </div>
+            </div>
+            <div class="tag">黑白学术风 · 适合论文截图</div>
+        </div>
+
+        <div class="canvas">
+            <div class="figure-shell">
+                <svg viewBox="0 0 1320 610" xmlns="http://www.w3.org/2000/svg" aria-label="1D-CNN 网络结构图">
+                    <defs>
+                        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#9ca3af" flood-opacity="0.18"/>
+                        </filter>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+                            <path d="M0,0 L10,5 L0,10 z" fill="#111827"/>
+                        </marker>
+                    </defs>
+
+                    <rect x="20" y="20" width="1280" height="570" rx="24" fill="#ffffff"/>
+                    <text x="660" y="60" text-anchor="middle" font-size="26" font-weight="700" fill="#111827">1D-CNN 通过局部卷积和下采样提取序列特征，再由全连接层完成分类</text>
+                    <text x="660" y="90" text-anchor="middle" font-size="15" fill="#4b5563">图中从左到右依次展示输入层、两级卷积池化模块、特征展平和输出层</text>
+
+                    <rect x="70" y="165" width="170" height="260" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="155" y="145" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">输入层</text>
+                    <g stroke="#000000" stroke-width="2">
+                        <line x1="108" y1="205" x2="108" y2="385"/>
+                        <line x1="124" y1="190" x2="124" y2="400"/>
+                        <line x1="140" y1="205" x2="140" y2="385"/>
+                        <line x1="156" y1="190" x2="156" y2="400"/>
+                        <line x1="172" y1="205" x2="172" y2="385"/>
+                        <line x1="188" y1="190" x2="188" y2="400"/>
+                        <line x1="204" y1="205" x2="204" y2="385"/>
+                    </g>
+                    <text x="155" y="450" text-anchor="middle" font-size="15" fill="#111827">原始一维特征序列</text>
+
+                    <line x1="240" y1="295" x2="320" y2="295" stroke="#111827" stroke-width="4" marker-end="url(#arrow)"/>
+                    <rect x="248" y="246" width="64" height="28" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+                    <text x="280" y="265" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">卷积</text>
+
+                    <rect x="330" y="140" width="170" height="120" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="415" y="180" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">卷积层 1</text>
+                    <text x="415" y="212" text-anchor="middle" font-size="15" fill="#000000">提取局部模式</text>
+                    <text x="415" y="238" text-anchor="middle" font-size="15" fill="#000000">Conv1D + ReLU</text>
+
+                    <rect x="330" y="330" width="170" height="95" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="415" y="368" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">池化层 1</text>
+                    <text x="415" y="396" text-anchor="middle" font-size="15" fill="#000000">MaxPooling1D</text>
+
+                    <line x1="415" y1="260" x2="415" y2="328" stroke="#111827" stroke-width="4" marker-end="url(#arrow)"/>
+                    <rect x="437" y="283" width="66" height="28" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+                    <text x="470" y="302" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">池化</text>
+
+                    <line x1="500" y1="378" x2="586" y2="378" stroke="#111827" stroke-width="4" marker-end="url(#arrow)"/>
+                    <rect x="510" y="330" width="68" height="28" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+                    <text x="544" y="349" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">卷积</text>
+
+                    <rect x="600" y="140" width="170" height="120" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="685" y="180" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">卷积层 2</text>
+                    <text x="685" y="212" text-anchor="middle" font-size="15" fill="#000000">提取更高层特征</text>
+                    <text x="685" y="238" text-anchor="middle" font-size="15" fill="#000000">Conv1D + ReLU</text>
+
+                    <rect x="600" y="330" width="170" height="95" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="685" y="368" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">池化层 2</text>
+                    <text x="685" y="396" text-anchor="middle" font-size="15" fill="#000000">压缩特征维度</text>
+
+                    <line x1="685" y1="260" x2="685" y2="328" stroke="#111827" stroke-width="4" marker-end="url(#arrow)"/>
+                    <rect x="707" y="283" width="66" height="28" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+                    <text x="740" y="302" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">池化</text>
+
+                    <line x1="770" y1="378" x2="876" y2="378" stroke="#111827" stroke-width="4" marker-end="url(#arrow)"/>
+                    <rect x="794" y="330" width="62" height="28" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+                    <text x="825" y="349" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">展平</text>
+
+                    <rect x="890" y="250" width="180" height="100" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="980" y="290" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">全连接层</text>
+                    <text x="980" y="318" text-anchor="middle" font-size="15" fill="#000000">Dense + Dropout</text>
+
+                    <line x1="1070" y1="300" x2="1162" y2="300" stroke="#111827" stroke-width="4" marker-end="url(#arrow)"/>
+                    <rect x="1088" y="252" width="60" height="28" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+                    <text x="1118" y="271" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">分类</text>
+
+                    <rect x="1175" y="230" width="95" height="140" rx="18" fill="#ffffff" stroke="#000000" stroke-width="2.2" filter="url(#shadow)"/>
+                    <text x="1222" y="270" text-anchor="middle" font-size="22" font-weight="700" fill="#000000">输出层</text>
+                    <text x="1222" y="304" text-anchor="middle" font-size="15" fill="#000000">Softmax</text>
+                    <text x="1222" y="334" text-anchor="middle" font-size="15" fill="#000000">正常</text>
+                    <text x="1222" y="358" text-anchor="middle" font-size="15" fill="#000000">攻击</text>
+
+                    <rect x="300" y="470" width="760" height="70" rx="18" fill="#ffffff" stroke="#000000" stroke-width="1.8"/>
+                    <text x="680" y="500" text-anchor="middle" font-size="18" font-weight="700" fill="#000000">结构说明</text>
+                    <text x="680" y="526" text-anchor="middle" font-size="14" fill="#000000">卷积层负责提取局部时序特征，池化层降低维度与冗余，全连接层整合特征并输出分类结果</text>
+                </svg>
+
+                <div class="insights">
+                    <div class="card">
+                        <h3>卷积层作用</h3>
+                        <p>通过若干一维卷积核在输入序列上滑动，提取局部相关模式，例如相邻特征间的组合关系和短程依赖。</p>
+                    </div>
+                    <div class="card">
+                        <h3>池化层作用</h3>
+                        <p>对卷积输出进行下采样，减少特征长度和计算量，同时保留主要响应信息，提高模型的鲁棒性。</p>
+                    </div>
+                    <div class="card">
+                        <h3>全连接层作用</h3>
+                        <p>把前面提取到的高层特征综合起来，再映射到具体类别空间，最终得到网络流量的分类结果。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-note">
+            <span>注：图中层数和参数个数用于结构示意，实际实验中可根据输入维度和任务需求调整。</span>
+            <span>建议以 100% 缩放截图，或打印为 PDF 后裁切插入论文。</span>
+        </div>
+    </div>
+</body>
+</html>

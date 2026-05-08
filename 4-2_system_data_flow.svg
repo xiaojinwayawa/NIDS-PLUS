@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 320" width="1400" height="320">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .box-title { font-family: 'Times New Roman', SimSun, serif; font-size: 22px; font-weight: bold; fill: #000; }
+      .text { font-family: 'Times New Roman', SimSun, serif; font-size: 16px; fill: #000; }
+      .small { font-family: 'Times New Roman', SimSun, serif; font-size: 13px; fill: #000; }
+      .box { fill: #fff; stroke: #000; stroke-width: 2; }
+      .sub { fill: #fff; stroke: #000; stroke-width: 1.4; }
+      .line { stroke: #000; stroke-width: 2; fill: none; }
+      .dashed { stroke: #000; stroke-width: 1.6; fill: none; stroke-dasharray: 7 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="320" fill="#fff"/>
+  <text x="700" y="42" text-anchor="middle" class="title">图4-2 系统数据流图</text>
+
+  <rect x="40" y="150" width="150" height="90" rx="8" class="box"/>
+  <text x="115" y="198" text-anchor="middle" class="box-title">流量捕获</text>
+
+  <rect x="240" y="150" width="150" height="90" rx="8" class="box"/>
+  <text x="315" y="198" text-anchor="middle" class="box-title">Redis 队列</text>
+
+  <rect x="440" y="150" width="165" height="90" rx="8" class="box"/>
+  <text x="522.5" y="198" text-anchor="middle" class="box-title">流聚合</text>
+
+  <rect x="655" y="150" width="170" height="90" rx="8" class="box"/>
+  <text x="740" y="198" text-anchor="middle" class="box-title">特征提取</text>
+
+  <rect x="875" y="150" width="175" height="90" rx="8" class="box"/>
+  <text x="962.5" y="198" text-anchor="middle" class="box-title">模型推理</text>
+
+  <rect x="1100" y="150" width="160" height="90" rx="8" class="box"/>
+  <text x="1180" y="198" text-anchor="middle" class="box-title">告警生成</text>
+
+  <line x1="190" y1="195" x2="240" y2="195" class="line" marker-end="url(#arrow)"/>
+  <line x1="390" y1="195" x2="440" y2="195" class="line" marker-end="url(#arrow)"/>
+  <line x1="605" y1="195" x2="655" y2="195" class="line" marker-end="url(#arrow)"/>
+  <line x1="825" y1="195" x2="875" y2="195" class="line" marker-end="url(#arrow)"/>
+  <line x1="1050" y1="195" x2="1100" y2="195" class="line" marker-end="url(#arrow)"/>
+
+</svg>

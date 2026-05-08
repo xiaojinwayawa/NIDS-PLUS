@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .layer-title { font-family: 'Times New Roman', SimSun, serif; font-size: 22px; font-weight: bold; fill: #000; }
+      .box-title { font-family: 'Times New Roman', SimSun, serif; font-size: 18px; font-weight: bold; fill: #000; }
+      .text { font-family: 'Times New Roman', SimSun, serif; font-size: 15px; fill: #000; }
+      .small { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: #000; }
+      .layer { fill: #fff; stroke: #000; stroke-width: 2; }
+      .module { fill: #fff; stroke: #000; stroke-width: 1.8; }
+      .submodule { fill: #fff; stroke: #000; stroke-width: 1.4; }
+      .line { stroke: #000; stroke-width: 1.8; fill: none; }
+      .dashed { stroke: #000; stroke-width: 1.6; fill: none; stroke-dasharray: 7 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="760" fill="#fff"/>
+  <text x="600" y="42" text-anchor="middle" class="title">图4-1 系统总体架构图</text>
+
+  <rect x="90" y="80" width="1020" height="150" class="layer"/>
+  <text x="600" y="110" text-anchor="middle" class="layer-title">前端展示层（Vue 3）</text>
+  <rect x="125" y="130" width="120" height="60" class="module"/>
+  <text x="185" y="165" text-anchor="middle" class="box-title">Dashboard</text>
+  <rect x="265" y="130" width="120" height="60" class="module"/>
+  <text x="325" y="165" text-anchor="middle" class="box-title">Alerts</text>
+  <rect x="405" y="130" width="120" height="60" class="module"/>
+  <text x="465" y="165" text-anchor="middle" class="box-title">Training</text>
+  <rect x="545" y="130" width="140" height="60" class="module"/>
+  <text x="615" y="165" text-anchor="middle" class="box-title">Experiments</text>
+  <rect x="705" y="130" width="150" height="60" class="module"/>
+  <text x="780" y="165" text-anchor="middle" class="box-title">Model Eval</text>
+  <rect x="875" y="130" width="190" height="60" class="module"/>
+  <text x="970" y="165" text-anchor="middle" class="box-title">Traffic / SHAP / Settings</text>
+
+  <line x1="600" y1="230" x2="600" y2="270" class="dashed" marker-end="url(#arrow)"/>
+  <text x="600" y="258" text-anchor="middle" class="small">RESTful API + WebSocket</text>
+
+  <rect x="90" y="290" width="1020" height="305" class="layer"/>
+  <text x="600" y="322" text-anchor="middle" class="layer-title">后端服务层（FastAPI）</text>
+
+  <rect x="120" y="345" width="700" height="210" class="module"/>
+  <text x="470" y="373" text-anchor="middle" class="box-title">Detection Engine（检测引擎）</text>
+
+  <rect x="150" y="400" width="120" height="56" class="submodule"/>
+  <text x="210" y="432" text-anchor="middle" class="text">Capture</text>
+  <rect x="290" y="400" width="120" height="56" class="submodule"/>
+  <text x="350" y="432" text-anchor="middle" class="text">Flow Aggregator</text>
+  <rect x="430" y="400" width="120" height="56" class="submodule"/>
+  <text x="490" y="432" text-anchor="middle" class="text">Feature Extractor</text>
+  <rect x="570" y="400" width="120" height="56" class="submodule"/>
+  <text x="630" y="432" text-anchor="middle" class="text">Inference Engine</text>
+  <rect x="710" y="400" width="80" height="56" class="submodule"/>
+  <text x="750" y="432" text-anchor="middle" class="text">Alert</text>
+
+  <rect x="190" y="482" width="120" height="50" class="submodule"/>
+  <text x="250" y="510" text-anchor="middle" class="text">Rule Engine</text>
+  <rect x="340" y="482" width="120" height="50" class="submodule"/>
+  <text x="400" y="510" text-anchor="middle" class="text">SHAP Analyzer</text>
+  <rect x="490" y="482" width="120" height="50" class="submodule"/>
+  <text x="550" y="510" text-anchor="middle" class="text">Fusion Wrapper</text>
+  <rect x="640" y="482" width="120" height="50" class="submodule"/>
+  <text x="700" y="510" text-anchor="middle" class="text">False Positive</text>
+
+  <rect x="855" y="345" width="225" height="65" class="module"/>
+  <text x="968" y="383" text-anchor="middle" class="box-title">Training Module</text>
+  <rect x="855" y="428" width="225" height="65" class="module"/>
+  <text x="968" y="466" text-anchor="middle" class="box-title">Experiment Runner</text>
+  <rect x="855" y="511" width="225" height="65" class="module"/>
+  <text x="968" y="549" text-anchor="middle" class="box-title">Model Evaluation</text>
+
+  <line x1="210" y1="456" x2="350" y2="456" class="line" marker-end="url(#arrow)"/>
+  <line x1="350" y1="456" x2="490" y2="456" class="line" marker-end="url(#arrow)"/>
+  <line x1="490" y1="456" x2="630" y2="456" class="line" marker-end="url(#arrow)"/>
+  <line x1="630" y1="456" x2="750" y2="456" class="line" marker-end="url(#arrow)"/>
+  <line x1="750" y1="456" x2="750" y2="482" class="dashed" marker-end="url(#arrow)"/>
+  <line x1="630" y1="456" x2="550" y2="482" class="dashed" marker-end="url(#arrow)"/>
+  <line x1="750" y1="456" x2="400" y2="482" class="dashed" marker-end="url(#arrow)"/>
+
+  <line x1="600" y1="595" x2="600" y2="640" class="dashed" marker-end="url(#arrow)"/>
+
+  <rect x="180" y="650" width="840" height="78" class="layer"/>
+  <text x="600" y="680" text-anchor="middle" class="layer-title">数据存储层</text>
+  <rect x="220" y="693" width="220" height="26" class="module"/>
+  <text x="330" y="710" text-anchor="middle" class="text">MySQL（元数据 / 告警）</text>
+  <rect x="490" y="693" width="220" height="26" class="module"/>
+  <text x="600" y="710" text-anchor="middle" class="text">Redis（消息队列 / 缓冲）</text>
+  <rect x="760" y="693" width="220" height="26" class="module"/>
+  <text x="870" y="710" text-anchor="middle" class="text">File System（模型 / 数据）</text>
+</svg>

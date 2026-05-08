@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760">
+  <defs>
+    <style>
+      .title { font-family: 'Times New Roman', SimSun, serif; font-size: 28px; font-weight: bold; fill: #000; }
+      .state-title { font-family: 'Times New Roman', SimSun, serif; font-size: 22px; font-weight: bold; fill: #000; }
+      .text { font-family: 'Times New Roman', SimSun, serif; font-size: 15px; fill: #000; }
+      .small { font-family: 'Times New Roman', SimSun, serif; font-size: 14px; fill: #000; }
+      .state { fill: #fff; stroke: #000; stroke-width: 2; }
+      .terminal { fill: #fff; stroke: #000; stroke-width: 2; }
+      .line { stroke: #000; stroke-width: 1.8; fill: none; }
+      .dashed { stroke: #000; stroke-width: 1.6; fill: none; stroke-dasharray: 7 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#000"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="760" fill="#fff"/>
+  <text x="600" y="42" text-anchor="middle" class="title">图5-2 流聚合状态机图</text>
+
+  <circle cx="150" cy="250" r="22" class="terminal"/>
+  <circle cx="150" cy="250" r="10" class="terminal"/>
+  <text x="150" y="292" text-anchor="middle" class="small">新建流</text>
+
+  <rect x="270" y="190" width="210" height="120" rx="12" class="state"/>
+  <text x="375" y="228" text-anchor="middle" class="state-title">ACTIVE</text>
+  <text x="375" y="258" text-anchor="middle" class="text">正在接收数据包</text>
+  <text x="375" y="282" text-anchor="middle" class="small">持续更新流统计特征</text>
+
+  <rect x="560" y="190" width="210" height="120" rx="12" class="state"/>
+  <text x="665" y="228" text-anchor="middle" class="state-title">IDLE</text>
+  <text x="665" y="258" text-anchor="middle" class="text">短时间无新包到达</text>
+  <text x="665" y="282" text-anchor="middle" class="small">等待后续包或进一步清理</text>
+
+  <rect x="795" y="95" width="240" height="130" rx="12" class="state"/>
+  <text x="915" y="135" text-anchor="middle" class="state-title">FINISHED</text>
+  <text x="915" y="165" text-anchor="middle" class="text">正常结束并输出流特征</text>
+  <text x="915" y="189" text-anchor="middle" class="small">FIN / RST 或达到最大包数</text>
+
+  <rect x="795" y="305" width="240" height="130" rx="12" class="state"/>
+  <text x="915" y="345" text-anchor="middle" class="state-title">TIMEOUT</text>
+  <text x="915" y="375" text-anchor="middle" class="text">超时终止并输出流特征</text>
+  <text x="915" y="399" text-anchor="middle" class="small">超过协议超时阈值</text>
+
+  <circle cx="1125" cy="250" r="22" class="terminal"/>
+  <circle cx="1125" cy="250" r="10" class="terminal"/>
+  <text x="1170" y="255" text-anchor="start" class="small">移出缓存</text>
+
+  <path d="M 172 250 L 270 250" class="line" marker-end="url(#arrow)"/>
+  <text x="220" y="236" text-anchor="middle" class="small">收到首个数据包</text>
+
+  <path d="M 480 250 L 560 250" class="line" marker-end="url(#arrow)"/>
+  <text x="520" y="236" text-anchor="middle" class="small">空闲超时</text>
+
+  <path d="M 665 190 L 665 120 L 795 120" class="line" marker-end="url(#arrow)"/>
+  <text x="730" y="108" text-anchor="middle" class="small">收到 FIN / RST 或达到最大包数</text>
+
+  <path d="M 770 250 L 915 250 L 915 305" class="line" marker-end="url(#arrow)"/>
+  <text x="850" y="268" text-anchor="middle" class="small">超过协议超时阈值</text>
+
+  <path d="M 665 310 L 665 500 L 375 500 L 375 310" class="dashed" marker-end="url(#arrow)"/>
+  <text x="520" y="518" text-anchor="middle" class="small">若后续数据包重新到达，则恢复为 ACTIVE</text>
+
+  <path d="M 1035 160 L 1125 160 L 1125 228" class="line" marker-end="url(#arrow)"/>
+  <path d="M 1035 370 L 1125 370 L 1125 272" class="line" marker-end="url(#arrow)"/>
+  <text x="1145" y="148" text-anchor="start" class="small">特征提取后删除</text>
+  <text x="1145" y="388" text-anchor="start" class="small">特征提取后删除</text>
+
+  <rect x="170" y="590" width="860" height="90" rx="8" class="state"/>
+  <text x="600" y="625" text-anchor="middle" class="state-title">状态转换说明</text>
+  <text x="600" y="652" text-anchor="middle" class="text">ACTIVE 表示流正在被持续更新；IDLE 表示短时间内无新包；FINISHED 表示正常结束；TIMEOUT 表示超时清理。</text>
+</svg>
